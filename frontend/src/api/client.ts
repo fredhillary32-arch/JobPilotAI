@@ -3,17 +3,21 @@ import type {
   CandidateEvidence,
   CandidateProfile,
   CandidateProfileInput,
+  CertificationInput,
   Certification,
   CvDraft,
   CvExport,
   DocumentExtraction,
   Education,
+  EducationInput,
   EvidenceStatus,
   ExportFormat,
   ExtractedText,
   JobDescription,
   Skill,
+  SkillInput,
   WorkExperience,
+  WorkExperienceInput,
   WorkspaceData,
 } from "./types";
 
@@ -89,11 +93,59 @@ export const api = {
     request<CandidateProfile>(profilePath(id), json("PATCH", payload)),
   listExperiences: (id: string) =>
     request<WorkExperience[]>(`${profilePath(id)}/experiences`),
+  createExperience: (id: string, payload: WorkExperienceInput) =>
+    request<WorkExperience>(`${profilePath(id)}/experiences`, json("POST", payload)),
+  updateExperience: (profileId: string, recordId: string, payload: WorkExperienceInput) =>
+    request<WorkExperience>(
+      `${profilePath(profileId)}/experiences/${encodeURIComponent(recordId)}`,
+      json("PATCH", payload),
+    ),
+  deleteExperience: (profileId: string, recordId: string) =>
+    request<void>(
+      `${profilePath(profileId)}/experiences/${encodeURIComponent(recordId)}`,
+      { method: "DELETE" },
+    ),
   listEducation: (id: string) =>
     request<Education[]>(`${profilePath(id)}/education`),
+  createEducation: (id: string, payload: EducationInput) =>
+    request<Education>(`${profilePath(id)}/education`, json("POST", payload)),
+  updateEducation: (profileId: string, recordId: string, payload: EducationInput) =>
+    request<Education>(
+      `${profilePath(profileId)}/education/${encodeURIComponent(recordId)}`,
+      json("PATCH", payload),
+    ),
+  deleteEducation: (profileId: string, recordId: string) =>
+    request<void>(
+      `${profilePath(profileId)}/education/${encodeURIComponent(recordId)}`,
+      { method: "DELETE" },
+    ),
   listSkills: (id: string) => request<Skill[]>(`${profilePath(id)}/skills`),
+  createSkill: (id: string, payload: SkillInput) =>
+    request<Skill>(`${profilePath(id)}/skills`, json("POST", payload)),
+  updateSkill: (profileId: string, recordId: string, payload: SkillInput) =>
+    request<Skill>(
+      `${profilePath(profileId)}/skills/${encodeURIComponent(recordId)}`,
+      json("PATCH", payload),
+    ),
+  deleteSkill: (profileId: string, recordId: string) =>
+    request<void>(
+      `${profilePath(profileId)}/skills/${encodeURIComponent(recordId)}`,
+      { method: "DELETE" },
+    ),
   listCertifications: (id: string) =>
     request<Certification[]>(`${profilePath(id)}/certifications`),
+  createCertification: (id: string, payload: CertificationInput) =>
+    request<Certification>(`${profilePath(id)}/certifications`, json("POST", payload)),
+  updateCertification: (profileId: string, recordId: string, payload: CertificationInput) =>
+    request<Certification>(
+      `${profilePath(profileId)}/certifications/${encodeURIComponent(recordId)}`,
+      json("PATCH", payload),
+    ),
+  deleteCertification: (profileId: string, recordId: string) =>
+    request<void>(
+      `${profilePath(profileId)}/certifications/${encodeURIComponent(recordId)}`,
+      { method: "DELETE" },
+    ),
   listDocuments: (id: string) =>
     request<CandidateDocument[]>(`${profilePath(id)}/documents`),
   uploadDocument: (id: string, file: File) => {
@@ -236,16 +288,22 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
 
   const extractions = Object.fromEntries(
     await Promise.all(
-      documents.map(async (document) => {
-        try {
-          return [document.id, await api.getExtraction(profileId, document.id)] as const;
-        } catch (error) {
-          if (error instanceof ApiError && error.status === 404) {
-            return [document.id, null] as const;
+      documents
+        .filter(
+          (document) =>
+            document.document_kind === "source_cv" ||
+            document.document_kind === "supporting_document",
+        )
+        .map(async (document) => {
+          try {
+            return [document.id, await api.getExtraction(profileId, document.id)] as const;
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 404) {
+              return [document.id, null] as const;
+            }
+            throw error;
           }
-          throw error;
-        }
-      }),
+        }),
     ),
   );
   const jobsById = new Map(jobs.map((job) => [job.id, job]));

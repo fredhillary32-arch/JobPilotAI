@@ -37,9 +37,16 @@ and `POSTGRES_DB` are required. `POSTGRES_HOST` defaults to `127.0.0.1` and
   the database connection is unavailable.
 - Candidate profiles are available under `/api/v1/candidate-profiles`: create
   with `POST`, retrieve by ID with `GET`, partially update with `PATCH`, and list
-  experiences, education, skills, or certifications with their respective
-  `/{profile_id}/experiences`, `/education`, `/skills`, and `/certifications`
-  endpoints.
+  profile records at `/{profile_id}/experiences`, `/education`, `/skills`, and
+  `/certifications`. Each of those collection endpoints supports `GET` and
+  `POST`; retrieve one record with `GET /{profile_id}/{collection}/{record_id}`,
+  update it with `PATCH`, and delete it with `DELETE` on that same record path.
+  Record IDs are scoped to their profile. Invalid date
+  ranges and field values return HTTP 422, unknown or mismatched profile/record
+  IDs return 404, and duplicate skills within one profile return HTTP 409.
+  Profile history forms accept candidate-provided information. Enter only
+  accurate facts; claims copied from extracted uploads remain unverified until
+  reviewed through the evidence workflow.
 - Original CVs and supporting documents can be uploaded to
   `/api/v1/candidate-profiles/{profile_id}/documents`, listed from the same
   endpoint, retrieved by document ID, and downloaded from the document's
@@ -214,15 +221,13 @@ setting, the workspace asks for an existing profile ID or creates a profile
 through the API; it remembers the selected ID in browser local storage. No
 candidate record or successful API response is bundled into the frontend.
 
-The workspace supports profile-field updates, lists the available work
-experience/education/skills/certifications data, uploads and downloads
-documents, starts/retries extraction, creates and reviews evidence, saves job
-descriptions, generates and reviews saved CV drafts, and creates/downloads
-PDF/DOCX exports. The current backend has no write endpoints for work history,
-education, skills or certifications and no source-document deletion endpoint;
-these records/files are shown as read-only and are not silently removed or
-overwritten. Evidence starts unreviewed, and only the candidate can explicitly
-confirm it.
+The workspace supports profile updates and create, list, edit, and delete
+operations for work experience, education, skills, and certifications.
+Profile-history records are scoped to the selected profile; duplicate skills
+and invalid date ranges are rejected. Deletion requires an explicit
+confirmation. Documents can be uploaded as new immutable source files,
+downloaded, and extracted; the API does not provide source-document deletion.
+Evidence starts unreviewed, and only the candidate can explicitly confirm it.
 
 Run frontend tests and a production build with:
 

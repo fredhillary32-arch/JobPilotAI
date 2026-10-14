@@ -36,6 +36,7 @@ export interface CandidateProfileInput {
 
 export interface WorkExperience {
   id: string;
+  candidate_profile_id: string;
   employer: string;
   job_title: string;
   location: string | null;
@@ -49,6 +50,7 @@ export interface WorkExperience {
 
 export interface Education {
   id: string;
+  candidate_profile_id: string;
   institution: string;
   qualification: string;
   field_of_study: string | null;
@@ -58,12 +60,46 @@ export interface Education {
 
 export interface Skill {
   id: string;
+  candidate_profile_id: string;
   name: string;
   proficiency_level: string | null;
 }
 
 export interface Certification {
   id: string;
+  candidate_profile_id: string;
+  name: string;
+  issuer: string;
+  issue_date: string;
+  expires_on: string | null;
+}
+
+export interface WorkExperienceInput {
+  employer: string;
+  job_title: string;
+  location: string | null;
+  work_arrangement: "remote" | "hybrid" | "onsite" | null;
+  start_date: string;
+  end_date: string | null;
+  current_role: boolean;
+  description: string | null;
+  achievements: string[];
+}
+
+export interface EducationInput {
+  institution: string;
+  qualification: string;
+  field_of_study: string | null;
+  start_date: string;
+  end_date: string | null;
+}
+
+export interface SkillInput {
+  name: string;
+  proficiency_level: "beginner" | "intermediate" | "advanced" | "expert" | null;
+}
+
+export interface CertificationInput {
   name: string;
   issuer: string;
   issue_date: string;

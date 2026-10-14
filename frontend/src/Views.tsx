@@ -3,13 +3,21 @@ import type { ReactNode } from "react";
 
 import type {
   CandidateProfileInput,
+  Certification,
+  CertificationInput,
+  Education,
+  EducationInput,
   EvidenceCategory,
   EvidenceStatus,
   ExportFormat,
   ExtractedText,
   JobDescription,
   RemoteWorkPreference,
+  Skill,
+  SkillInput,
   WorkspaceData,
+  WorkExperience,
+  WorkExperienceInput,
 } from "./api/types";
 
 export type ViewName =
@@ -21,7 +29,7 @@ export type ViewName =
   | "Tailored CVs"
   | "Exports";
 
-type RunAction = (action: () => Promise<unknown>, success?: string) => void;
+type RunAction = (action: () => Promise<unknown>, success?: string) => Promise<boolean>;
 
 const categories: EvidenceCategory[] = [
   "employment_responsibility",
@@ -149,10 +157,36 @@ export function DashboardView({
 export function ProfileView({
   data,
   onSave,
+  onCreateExperience,
+  onUpdateExperience,
+  onDeleteExperience,
+  onCreateEducation,
+  onUpdateEducation,
+  onDeleteEducation,
+  onCreateSkill,
+  onUpdateSkill,
+  onDeleteSkill,
+  onCreateCertification,
+  onUpdateCertification,
+  onDeleteCertification,
+  busy,
   runAction,
 }: {
   data: WorkspaceData;
   onSave: (payload: CandidateProfileInput) => Promise<unknown>;
+  onCreateExperience: (payload: WorkExperienceInput) => Promise<unknown>;
+  onUpdateExperience: (id: string, payload: WorkExperienceInput) => Promise<unknown>;
+  onDeleteExperience: (id: string) => Promise<unknown>;
+  onCreateEducation: (payload: EducationInput) => Promise<unknown>;
+  onUpdateEducation: (id: string, payload: EducationInput) => Promise<unknown>;
+  onDeleteEducation: (id: string) => Promise<unknown>;
+  onCreateSkill: (payload: SkillInput) => Promise<unknown>;
+  onUpdateSkill: (id: string, payload: SkillInput) => Promise<unknown>;
+  onDeleteSkill: (id: string) => Promise<unknown>;
+  onCreateCertification: (payload: CertificationInput) => Promise<unknown>;
+  onUpdateCertification: (id: string, payload: CertificationInput) => Promise<unknown>;
+  onDeleteCertification: (id: string) => Promise<unknown>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   const [form, setForm] = useState<ProfileFormState>(() => profileForm(data));
@@ -192,20 +226,56 @@ export function ProfileView({
 
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Candidate history</p><h2>Work, education and skills</h2></div></div>
-        <p className="inline-note">These records are loaded from your profile. The current API supports viewing them but does not yet provide create, edit or delete operations for these record types.</p>
+        <p className="inline-note">Only add facts you confirm as accurate. Work achievements entered here are candidate-provided profile information; text extracted from uploaded documents remains unverified until you review it in Evidence review.</p>
         <div className="record-columns">
-          <RecordGroup title="Work experience" count={data.experiences.length} empty="No work experience has been added.">
-            {data.experiences.map((item) => <Record key={item.id} title={item.job_title} subtitle={`${item.employer} · ${item.start_date}${item.current_role ? " – Present" : item.end_date ? ` – ${item.end_date}` : ""}`} detail={item.description} />)}
-          </RecordGroup>
-          <RecordGroup title="Education" count={data.education.length} empty="No education has been added.">
-            {data.education.map((item) => <Record key={item.id} title={item.qualification} subtitle={`${item.institution}${item.field_of_study ? ` · ${item.field_of_study}` : ""}`} detail={`${item.start_date}${item.end_date ? ` – ${item.end_date}` : ""}`} />)}
-          </RecordGroup>
-          <RecordGroup title="Skills" count={data.skills.length} empty="No skills have been added.">
-            {data.skills.map((item) => <Record key={item.id} title={item.name} subtitle={item.proficiency_level || "Proficiency not specified"} />)}
-          </RecordGroup>
-          <RecordGroup title="Certifications" count={data.certifications.length} empty="No certifications have been added.">
-            {data.certifications.map((item) => <Record key={item.id} title={item.name} subtitle={`${item.issuer} · ${item.issue_date}`} />)}
-          </RecordGroup>
+          <RecordManager<WorkExperience, WorkExperienceInput>
+            title="Work experience"
+            records={data.experiences}
+            empty="No work experience has been added."
+            busy={busy}
+            createLabel="Add work experience"
+            onCreate={(input) => runAction(() => onCreateExperience(input), "Work experience added.")}
+            onUpdate={(id, input) => runAction(() => onUpdateExperience(id, input), "Work experience updated.")}
+            onDelete={(id) => runAction(() => onDeleteExperience(id), "Work experience deleted.")}
+            renderEditor={(record, onSubmit, onCancel) => <WorkExperienceEditor record={record} onSubmit={onSubmit} onCancel={onCancel} />}
+            renderRecord={(item) => <Record title={item.job_title} subtitle={`${item.employer} · ${item.start_date}${item.current_role ? " – Present" : item.end_date ? ` – ${item.end_date}` : ""}`} detail={item.description} extra={item.achievements.length ? <ul>{item.achievements.map((achievement) => <li key={achievement}>{achievement}</li>)}</ul> : null} />}
+          />
+          <RecordManager<Education, EducationInput>
+            title="Education"
+            records={data.education}
+            empty="No education has been added."
+            busy={busy}
+            createLabel="Add education"
+            onCreate={(input) => runAction(() => onCreateEducation(input), "Education added.")}
+            onUpdate={(id, input) => runAction(() => onUpdateEducation(id, input), "Education updated.")}
+            onDelete={(id) => runAction(() => onDeleteEducation(id), "Education deleted.")}
+            renderEditor={(record, onSubmit, onCancel) => <EducationEditor record={record} onSubmit={onSubmit} onCancel={onCancel} />}
+            renderRecord={(item) => <Record title={item.qualification} subtitle={`${item.institution}${item.field_of_study ? ` · ${item.field_of_study}` : ""}`} detail={`${item.start_date}${item.end_date ? ` – ${item.end_date}` : ""}`} />}
+          />
+          <RecordManager<Skill, SkillInput>
+            title="Skills"
+            records={data.skills}
+            empty="No skills have been added."
+            busy={busy}
+            createLabel="Add skill"
+            onCreate={(input) => runAction(() => onCreateSkill(input), "Skill added.")}
+            onUpdate={(id, input) => runAction(() => onUpdateSkill(id, input), "Skill updated.")}
+            onDelete={(id) => runAction(() => onDeleteSkill(id), "Skill deleted.")}
+            renderEditor={(record, onSubmit, onCancel) => <SkillEditor record={record} onSubmit={onSubmit} onCancel={onCancel} />}
+            renderRecord={(item) => <Record title={item.name} subtitle={item.proficiency_level || "Proficiency not specified"} />}
+          />
+          <RecordManager<Certification, CertificationInput>
+            title="Certifications"
+            records={data.certifications}
+            empty="No certifications have been added."
+            busy={busy}
+            createLabel="Add certification"
+            onCreate={(input) => runAction(() => onCreateCertification(input), "Certification added.")}
+            onUpdate={(id, input) => runAction(() => onUpdateCertification(id, input), "Certification updated.")}
+            onDelete={(id) => runAction(() => onDeleteCertification(id), "Certification deleted.")}
+            renderEditor={(record, onSubmit, onCancel) => <CertificationEditor record={record} onSubmit={onSubmit} onCancel={onCancel} />}
+            renderRecord={(item) => <Record title={item.name} subtitle={`${item.issuer} · ${item.issue_date}`} detail={item.expires_on ? `Expires ${item.expires_on}` : null} />}
+          />
         </div>
       </section>
     </div>
@@ -462,12 +532,350 @@ export function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-state"><span aria-hidden="true">○</span><h3>{title}</h3><p>{text}</p></div>;
 }
 
-function RecordGroup({ title, count, empty, children }: { title: string; count: number; empty: string; children: ReactNode }) {
-  return <section className="record-group"><div><h3>{title}</h3><span className="count-pill">{count}</span></div>{count ? <div className="record-list">{children}</div> : <p className="muted">{empty}</p>}</section>;
+type FormValue = string | boolean;
+type FormValues = Record<string, FormValue>;
+type ProfileRecord = { id: string };
+
+interface RecordField {
+  name: string;
+  label: string;
+  type?: "text" | "date" | "email" | "textarea" | "select" | "checkbox";
+  required?: boolean;
+  maxLength?: number;
+  rows?: number;
+  hint?: string;
+  options?: { label: string; value: string }[];
+  showWhen?: (values: FormValues) => boolean;
 }
 
-function Record({ title, subtitle, detail }: { title: string; subtitle: string; detail?: string | null }) {
-  return <article className="record"><strong>{title}</strong><span>{subtitle}</span>{detail && <small>{detail}</small>}</article>;
+interface RecordManagerProps<T extends ProfileRecord, Input> {
+  title: string;
+  records: T[];
+  empty: string;
+  busy: boolean;
+  createLabel: string;
+  onCreate: (input: Input) => Promise<boolean>;
+  onUpdate: (id: string, input: Input) => Promise<boolean>;
+  onDelete: (id: string) => Promise<boolean>;
+  renderEditor: (
+    record: T | null,
+    onSubmit: (input: Input) => Promise<boolean>,
+    onCancel: () => void,
+  ) => ReactNode;
+  renderRecord: (record: T) => ReactNode;
+}
+
+function RecordManager<T extends ProfileRecord, Input>({
+  title,
+  records,
+  empty,
+  busy,
+  createLabel,
+  onCreate,
+  onUpdate,
+  onDelete,
+  renderEditor,
+  renderRecord,
+}: RecordManagerProps<T, Input>) {
+  const [editing, setEditing] = useState<T | null | undefined>(undefined);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  async function submit(input: Input) {
+    const succeeded = editing
+      ? await onUpdate(editing.id, input)
+      : await onCreate(input);
+    if (succeeded) setEditing(undefined);
+    return succeeded;
+  }
+
+  async function confirmDelete(id: string) {
+    if (await onDelete(id)) setDeleteId(null);
+  }
+
+  return (
+    <section className="record-group">
+      <div className="record-group-heading">
+        <h3>{title}</h3>
+        <span className="count-pill">{records.length}</span>
+      </div>
+      {records.length ? (
+        <div className="record-list">
+          {records.map((record) => (
+            <div className="managed-record" key={record.id}>
+              {renderRecord(record)}
+              <div className="record-actions">
+                <button className="text-button" disabled={busy} onClick={() => setEditing(record)}>Edit</button>
+                {deleteId === record.id ? (
+                  <span className="delete-confirmation">
+                    <span>Delete this record?</span>
+                    <button className="text-button" disabled={busy} onClick={() => void confirmDelete(record.id)}>Confirm delete</button>
+                    <button className="text-button" disabled={busy} onClick={() => setDeleteId(null)}>Cancel</button>
+                  </span>
+                ) : (
+                  <button className="text-button danger-text-button" disabled={busy} onClick={() => { setEditing(undefined); setDeleteId(record.id); }}>Delete</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted record-empty">{empty}</p>
+      )}
+      {editing !== undefined ? (
+        renderEditor(editing, submit, () => setEditing(undefined))
+      ) : (
+        <button className="button button-secondary record-add" disabled={busy} onClick={() => { setDeleteId(null); setEditing(null); }}>{createLabel}</button>
+      )}
+    </section>
+  );
+}
+
+function Record({
+  title,
+  subtitle,
+  detail,
+  extra,
+}: {
+  title: string;
+  subtitle: string;
+  detail?: string | null;
+  extra?: ReactNode;
+}) {
+  return <article className="record"><strong>{title}</strong><span>{subtitle}</span>{detail && <small>{detail}</small>}{extra}</article>;
+}
+
+function RecordForm<Input>({
+  fields,
+  values: initialValues,
+  submitLabel,
+  toPayload,
+  onSubmit,
+  onCancel,
+}: {
+  fields: RecordField[];
+  values: FormValues;
+  submitLabel: string;
+  toPayload: (values: FormValues) => Input;
+  onSubmit: (payload: Input) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [values, setValues] = useState(initialValues);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSubmit(toPayload(values));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="record-editor" onSubmit={(event) => void submit(event)}>
+      <div className="record-editor-grid">
+        {fields.filter((field) => !field.showWhen || field.showWhen(values)).map((field) => (
+          <Field key={field.name} label={field.label} required={field.required} hint={field.hint}>
+            {field.type === "textarea" ? (
+              <textarea
+                maxLength={field.maxLength}
+                required={field.required}
+                rows={field.rows || 3}
+                value={String(values[field.name] || "")}
+                onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+              />
+            ) : field.type === "checkbox" ? (
+              <input
+                checked={Boolean(values[field.name])}
+                type="checkbox"
+                onChange={(event) => setValues({ ...values, [field.name]: event.target.checked })}
+              />
+            ) : field.type === "select" ? (
+              <select
+                value={String(values[field.name] || "")}
+                onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+              >
+                <option value="">Not specified</option>
+                {(field.options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            ) : (
+              <input
+                maxLength={field.maxLength}
+                required={field.required}
+                type={field.type || "text"}
+                value={String(values[field.name] || "")}
+                onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+              />
+            )}
+          </Field>
+        ))}
+      </div>
+      <div className="record-editor-actions">
+        <button className="button button-primary" disabled={saving} type="submit">{saving ? "Saving…" : submitLabel}</button>
+        <button className="button button-secondary" disabled={saving} onClick={onCancel} type="button">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function WorkExperienceEditor({
+  record,
+  onSubmit,
+  onCancel,
+}: {
+  record: WorkExperience | null;
+  onSubmit: (payload: WorkExperienceInput) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const fields: RecordField[] = [
+    { name: "job_title", label: "Job title", required: true, maxLength: 200 },
+    { name: "employer", label: "Employer", required: true, maxLength: 200 },
+    { name: "location", label: "Location", maxLength: 200 },
+    { name: "work_arrangement", label: "Work arrangement", type: "select", options: [
+      { label: "Remote", value: "remote" }, { label: "Hybrid", value: "hybrid" }, { label: "On-site", value: "onsite" },
+    ] },
+    { name: "start_date", label: "Start date", type: "date", required: true },
+    { name: "current_role", label: "Current role", type: "checkbox" },
+    { name: "end_date", label: "End date", type: "date", showWhen: (values) => !values.current_role },
+    { name: "description", label: "Role description", type: "textarea", rows: 3, maxLength: 5000 },
+    { name: "achievements", label: "Achievements", type: "textarea", rows: 4, maxLength: 2000, hint: "One candidate-confirmed achievement per line. Do not add unverified metrics or claims." },
+  ];
+  return <RecordForm
+    fields={fields}
+    values={{
+      job_title: record?.job_title || "",
+      employer: record?.employer || "",
+      location: record?.location || "",
+      work_arrangement: record?.work_arrangement || "",
+      start_date: record?.start_date || "",
+      end_date: record?.end_date || "",
+      current_role: record?.current_role || false,
+      description: record?.description || "",
+      achievements: record?.achievements.join("\n") || "",
+    }}
+    submitLabel={record ? "Save work experience" : "Save new work experience"}
+    onSubmit={onSubmit}
+    onCancel={onCancel}
+    toPayload={(values) => ({
+      job_title: textValue(values, "job_title"),
+      employer: textValue(values, "employer"),
+      location: optionalText(values, "location"),
+      work_arrangement: optionalText(values, "work_arrangement") as WorkExperienceInput["work_arrangement"],
+      start_date: textValue(values, "start_date"),
+      end_date: Boolean(values.current_role) ? null : optionalText(values, "end_date"),
+      current_role: Boolean(values.current_role),
+      description: optionalText(values, "description"),
+      achievements: textValue(values, "achievements").split("\n").map((item) => item.trim()).filter(Boolean),
+    })}
+  />;
+}
+
+function EducationEditor({
+  record,
+  onSubmit,
+  onCancel,
+}: {
+  record: Education | null;
+  onSubmit: (payload: EducationInput) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  return <RecordForm
+    fields={[
+      { name: "qualification", label: "Qualification", required: true, maxLength: 200 },
+      { name: "institution", label: "Institution", required: true, maxLength: 200 },
+      { name: "field_of_study", label: "Field of study", maxLength: 200 },
+      { name: "start_date", label: "Start date", type: "date", required: true },
+      { name: "end_date", label: "End date", type: "date" },
+    ]}
+    values={{
+      qualification: record?.qualification || "",
+      institution: record?.institution || "",
+      field_of_study: record?.field_of_study || "",
+      start_date: record?.start_date || "",
+      end_date: record?.end_date || "",
+    }}
+    submitLabel={record ? "Save education" : "Save new education"}
+    onSubmit={onSubmit}
+    onCancel={onCancel}
+    toPayload={(values) => ({
+      qualification: textValue(values, "qualification"),
+      institution: textValue(values, "institution"),
+      field_of_study: optionalText(values, "field_of_study"),
+      start_date: textValue(values, "start_date"),
+      end_date: optionalText(values, "end_date"),
+    })}
+  />;
+}
+
+function SkillEditor({
+  record,
+  onSubmit,
+  onCancel,
+}: {
+  record: Skill | null;
+  onSubmit: (payload: SkillInput) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  return <RecordForm
+    fields={[
+      { name: "name", label: "Skill", required: true, maxLength: 100 },
+      { name: "proficiency_level", label: "Proficiency level", type: "select", options: [
+        { label: "Beginner", value: "beginner" }, { label: "Intermediate", value: "intermediate" },
+        { label: "Advanced", value: "advanced" }, { label: "Expert", value: "expert" },
+      ] },
+    ]}
+    values={{ name: record?.name || "", proficiency_level: record?.proficiency_level || "" }}
+    submitLabel={record ? "Save skill" : "Save new skill"}
+    onSubmit={onSubmit}
+    onCancel={onCancel}
+    toPayload={(values) => ({
+      name: textValue(values, "name"),
+      proficiency_level: optionalText(values, "proficiency_level") as SkillInput["proficiency_level"],
+    })}
+  />;
+}
+
+function CertificationEditor({
+  record,
+  onSubmit,
+  onCancel,
+}: {
+  record: Certification | null;
+  onSubmit: (payload: CertificationInput) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  return <RecordForm
+    fields={[
+      { name: "name", label: "Certification", required: true, maxLength: 200 },
+      { name: "issuer", label: "Issuing organization", required: true, maxLength: 200 },
+      { name: "issue_date", label: "Issue date", type: "date", required: true },
+      { name: "expires_on", label: "Expiry date", type: "date" },
+    ]}
+    values={{
+      name: record?.name || "",
+      issuer: record?.issuer || "",
+      issue_date: record?.issue_date || "",
+      expires_on: record?.expires_on || "",
+    }}
+    submitLabel={record ? "Save certification" : "Save new certification"}
+    onSubmit={onSubmit}
+    onCancel={onCancel}
+    toPayload={(values) => ({
+      name: textValue(values, "name"),
+      issuer: textValue(values, "issuer"),
+      issue_date: textValue(values, "issue_date"),
+      expires_on: optionalText(values, "expires_on"),
+    })}
+  />;
+}
+
+function textValue(values: FormValues, name: string): string {
+  return typeof values[name] === "string" ? values[name].trim() : "";
+}
+
+function optionalText(values: FormValues, name: string): string | null {
+  return textValue(values, name) || null;
 }
 
 function ResultList({ title, items, kind }: { title: string; items: string[]; kind: string }) {

@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { api, ApiError, loadWorkspace, saveBlob } from "./api/client";
-import type { CandidateProfileInput, EvidenceStatus, ExportFormat, WorkspaceData } from "./api/types";
+import type {
+  CandidateProfileInput,
+  CertificationInput,
+  EducationInput,
+  EvidenceStatus,
+  ExportFormat,
+  SkillInput,
+  WorkExperienceInput,
+  WorkspaceData,
+} from "./api/types";
 import {
   DashboardView,
   DocumentsView,
@@ -86,8 +95,8 @@ export default function App() {
     setNotice("");
   }
 
-  async function runAction(action: () => Promise<unknown>, success?: string) {
-    if (actionLock.current) return;
+  async function runAction(action: () => Promise<unknown>, success?: string): Promise<boolean> {
+    if (actionLock.current) return false;
     actionLock.current = true;
     setBusy(true);
     setActionError("");
@@ -96,6 +105,7 @@ export default function App() {
       await action();
       if (success) setNotice(success);
       if (profileId) setData(await loadWorkspace(profileId));
+      return true;
     } catch (error) {
       setActionError(errorMessage(error));
       if (profileId) {
@@ -107,6 +117,7 @@ export default function App() {
           );
         }
       }
+      return false;
     } finally {
       actionLock.current = false;
       setBusy(false);
@@ -174,7 +185,24 @@ export default function App() {
   const view = (() => {
     switch (activeView) {
       case "Profile":
-        return <ProfileView data={data} onSave={saveProfile} runAction={runAction} />;
+        return <ProfileView
+          data={data}
+          onSave={saveProfile}
+          onCreateExperience={(payload: WorkExperienceInput) => api.createExperience(profileId, payload)}
+          onUpdateExperience={(id: string, payload: WorkExperienceInput) => api.updateExperience(profileId, id, payload)}
+          onDeleteExperience={(id: string) => api.deleteExperience(profileId, id)}
+          onCreateEducation={(payload: EducationInput) => api.createEducation(profileId, payload)}
+          onUpdateEducation={(id: string, payload: EducationInput) => api.updateEducation(profileId, id, payload)}
+          onDeleteEducation={(id: string) => api.deleteEducation(profileId, id)}
+          onCreateSkill={(payload: SkillInput) => api.createSkill(profileId, payload)}
+          onUpdateSkill={(id: string, payload: SkillInput) => api.updateSkill(profileId, id, payload)}
+          onDeleteSkill={(id: string) => api.deleteSkill(profileId, id)}
+          onCreateCertification={(payload: CertificationInput) => api.createCertification(profileId, payload)}
+          onUpdateCertification={(id: string, payload: CertificationInput) => api.updateCertification(profileId, id, payload)}
+          onDeleteCertification={(id: string) => api.deleteCertification(profileId, id)}
+          busy={busy}
+          runAction={runAction}
+        />;
       case "Documents":
         return <DocumentsView data={data} onUpload={uploadDocument} onExtract={extractDocument} onDownload={downloadDocument} onGetText={(id) => api.getExtractedText(profileId, id)} runAction={runAction} />;
       case "Evidence review":
