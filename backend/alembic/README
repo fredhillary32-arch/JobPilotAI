@@ -1,0 +1,2 @@
+Migration scripts are created in the versions directory after application models
+have been added and imported by app.models.
