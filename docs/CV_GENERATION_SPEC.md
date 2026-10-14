@@ -9,9 +9,10 @@ document-derived evidence may support a generated claim only after its
 confirmation status is `candidate_confirmed`. Evidence marked `unreviewed` or
 `rejected` must never support generated claims.
 
-This milestone does not produce a downloadable PDF or DOCX, tailor language
-with an AI model, submit applications, or transmit candidate or job-description
-content outside the local application.
+The local application can export a successfully validated saved draft as a
+separate PDF or DOCX artifact. It does not tailor language with an AI model,
+submit applications, or transmit candidate or job-description content outside
+the local application.
 
 ## Required CV order and style
 
@@ -68,9 +69,33 @@ The API is local-only until authentication and authorization are implemented:
 - `GET /api/v1/candidate-profiles/{profile_id}/cv-drafts`
 - `GET /api/v1/candidate-profiles/{profile_id}/cv-drafts/{draft_id}`
 
-The initial output is a readable, single-column plain-text draft. Page count
-depends on the source material; readability takes priority over shrinking text
-to force a one-page result.
+The saved draft retains a readable plain-text representation and structured
+claims. PDF and DOCX exports use the same six-section order and a clean,
+single-column layout with black headings and ordinary bullet points. Every
+included role retains exactly five substantive, traceable bullets. Export
+validates the saved validation result and rechecks its source references;
+failed or subsequently invalid drafts are not exported.
+
+Exports are new records linked to the profile, draft, and a private
+`CandidateDocument` artifact. A generated opaque filename is used rather than
+candidate or job-description text. The original upload and saved draft are
+unchanged, and repeated exports create separate artifacts. PDF page count is
+recorded from the rendered document. DOCX page count is left unknown because it
+depends on the word processor, page settings, and installed fonts. Layout
+targets one page where the material allows but uses readable pagination rather
+than shrinking text excessively or dropping content.
+
+Export API:
+
+- `POST /api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports`
+  with `{"export_format":"pdf"}` or `{"export_format":"docx"}` creates an
+  export.
+- `GET` on the same `/exports` path lists exports for that draft.
+- `GET .../exports/{export_id}/download` streams the private artifact.
+
+ReportLab creates PDFs using a bundled Unicode-capable font, and python-docx
+creates DOCX files. Export files use the configured private document-storage
+directory, not a public static directory.
 
 ## Future provider boundary
 
@@ -85,4 +110,7 @@ to an external service.
 The application currently has no authentication or authorization. Profile IDs
 scope resource relationships but do not authenticate a caller. Do not expose
 the API publicly or use it as a shared multi-user service. Job descriptions
-and candidate content must be treated as untrusted input.
+and candidate content must be treated as untrusted input. Export downloads
+require the profile, job, draft, and export IDs to match, but these checks do
+not replace authentication. Private storage must be access-controlled and
+included in protected backups.

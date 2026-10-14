@@ -145,8 +145,28 @@ CV drafts contain the required single-column section order and plain text.
 The draft targets one page where the source material permits it, but does not
 shrink text to force one page. The frontend does not yet render/export the CV
 draft; use the API `generated_content` and `structured_content` response for
-review. See [CV_GENERATION_SPEC.md](./docs/CV_GENERATION_SPEC.md) for trust
-rules, layout, provider boundary, and current limitations.
+review. Export a successfully validated draft as PDF or DOCX through
+`POST /api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports`
+with `{"export_format":"pdf"}` or `{"export_format":"docx"}`. List exports on
+that route with `GET`, and download one with
+`GET .../exports/{export_id}/download`. Failed drafts or drafts whose saved
+validation/source evidence no longer passes validation cannot be exported.
+Export records include the draft association, format, creation time, safe
+generated filename, and PDF page count. DOCX page count is `null` because it
+depends on the word processor and its installed fonts. PDF exports report
+rendered page count and paginate at readable font sizes rather than deleting
+content or shrinking it to force one page.
+
+PDF rendering uses ReportLab and its bundled Unicode-capable Vera font;
+DOCX uses python-docx. The exported layout is a private, single-column
+ATS-friendly document with the specified section order and five supported
+bullets per included role. Exports are separate immutable artifacts stored
+through the same private local document-storage service as source uploads;
+metadata is stored in PostgreSQL. Generated filenames do not contain
+candidate or job-description text. The original uploads, saved draft, and
+earlier exports are not overwritten. No AI service receives candidate content.
+See [CV_GENERATION_SPEC.md](./docs/CV_GENERATION_SPEC.md) for trust rules,
+layout, provider boundary, export behavior, and current limitations.
 
 These endpoints are local-only until authentication and authorization exist.
 Profile-scoped IDs do not authenticate callers. Do not expose them publicly or
@@ -160,13 +180,60 @@ test database. From `backend`, run:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-## Frontend
-
-From `frontend`, install and run the React application:
+Export tests use synthetic CV content and in-memory SQLite. Run them from
+`backend` with:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_cv_exports.py
+```
+
+## Frontend
+
+The React workspace calls the existing profile, document, extraction, evidence,
+job-description, draft, and export endpoints. From the repository root, run
+the backend locally in one terminal:
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+Then start Vite in another terminal:
+
+```powershell
+Set-Location frontend
 npm install
 npm run dev
+```
+
+The Vite development and preview servers proxy `/api` requests to
+`http://127.0.0.1:8000`. Set the non-secret `VITE_API_BASE_URL` variable at
+build/start time to override the API base (include `/api/v1`), or set
+`VITE_CANDIDATE_PROFILE_ID` to preselect an existing profile ID. Without that
+setting, the workspace asks for an existing profile ID or creates a profile
+through the API; it remembers the selected ID in browser local storage. No
+candidate record or successful API response is bundled into the frontend.
+
+The workspace supports profile-field updates, lists the available work
+experience/education/skills/certifications data, uploads and downloads
+documents, starts/retries extraction, creates and reviews evidence, saves job
+descriptions, generates and reviews saved CV drafts, and creates/downloads
+PDF/DOCX exports. The current backend has no write endpoints for work history,
+education, skills or certifications and no source-document deletion endpoint;
+these records/files are shown as read-only and are not silently removed or
+overwritten. Evidence starts unreviewed, and only the candidate can explicitly
+confirm it.
+
+Run frontend tests and a production build with:
+
+```powershell
 npm test
 npm run build
 ```
+
+The API currently has no authentication or authorization. Keep both frontend
+and backend on a trusted local machine; do not expose the API or serve this as
+a shared public application. A production frontend on a different origin
+requires an explicitly configured same-origin API proxy or appropriately
+restricted backend CORS configuration, which is not added in this local-only
+milestone.
