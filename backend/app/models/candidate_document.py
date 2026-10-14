@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -44,6 +45,11 @@ class CandidateDocument(Base):
             name="ck_candidate_document_provenance",
         ),
         CheckConstraint("size_bytes > 0", name="ck_candidate_document_size"),
+        UniqueConstraint(
+            "id",
+            "candidate_profile_id",
+            name="uq_candidate_document_profile",
+        ),
         Index(
             "ix_candidate_documents_profile_created",
             "candidate_profile_id",
@@ -86,4 +92,15 @@ class CandidateDocument(Base):
     )
     derived_documents: Mapped[list["CandidateDocument"]] = relationship(
         back_populates="source_document",
+    )
+    extraction: Mapped["DocumentExtraction | None"] = relationship(
+        back_populates="source_document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    evidence_records: Mapped[list["CandidateEvidence"]] = relationship(
+        back_populates="source_document",
+        overlaps="candidate_profile,evidence_records",
+        passive_deletes=True,
     )

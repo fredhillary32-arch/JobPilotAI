@@ -51,6 +51,21 @@ and `POSTGRES_DB` are required. `POSTGRES_HOST` defaults to `127.0.0.1` and
   path, and retrieved by document ID. Download the original bytes from the
   document's `/download` endpoint. Uploads accept PDF, DOCX, or UTF-8 TXT files
   up to 10 MB. Original uploads are immutable; new files create new records.
+- Start or retry local text extraction with
+  `POST /api/v1/candidate-profiles/{profile_id}/documents/{document_id}/extraction`.
+  Read extraction status and metadata with `GET` on that path, or retrieve the
+  text from its `/text` endpoint. The extractor supports embedded PDF text,
+  DOCX paragraphs and tables, and UTF-8 TXT. Results are source text, not
+  verification of a candidate's claims. Scanned PDFs receive a `no_text`
+  status; OCR is not performed.
+- List source-linked evidence at
+  `/api/v1/candidate-profiles/{profile_id}/evidence`. `POST` creates evidence
+  from an existing document's extracted text; source excerpts or offsets must
+  match that text. `GET`, `PATCH`, and `DELETE` operate on an evidence record.
+  New evidence starts as `unreviewed`; change `confirmation_status` explicitly
+  to `candidate_confirmed` or `rejected` only after candidate review. Offsets
+  refer to the normalized extracted text and evidence is not independently
+  verified.
 
 Run backend tests from `backend` with:
 
@@ -58,22 +73,19 @@ Run backend tests from `backend` with:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Document file bytes are stored outside PostgreSQL in a private local directory,
-`var/documents` by default. Set `DOCUMENT_STORAGE_PATH` in `.env` to use another
-location. The file-store interface allows replacement with a protected object
-storage implementation later. Restrict access to the storage directory and
-include it in access-controlled backups. Upload checks format, declared MIME
-type, and maximum size but does not perform malware scanning. Keep the API
-private until authentication and authorization are implemented.
+Original document bytes are stored outside PostgreSQL in a private local
+directory, `var/documents` by default. Set `DOCUMENT_STORAGE_PATH` in `.env` to
+use another location. PostgreSQL stores extracted text and evidence metadata.
+The parser does not execute macros or scripts, use OCR, or send documents to an
+external service. Extraction has document-size, page-count, text-length, and
+DOCX archive limits; it is not malware scanning or content sanitization.
+Extracted content must be treated as untrusted input and is never an instruction
+to the application or a future AI system. Restrict filesystem and database
+access and include both in access-controlled backups.
 
-Document files are stored outside PostgreSQL under `var/documents` by default.
-Set `DOCUMENT_STORAGE_PATH` to an absolute private directory in `.env` to choose
-another location. The local storage implementation is behind a storage
-interface so a protected object-storage implementation can replace it later.
-Restrict filesystem access to the application process and include this storage
-location in access-controlled backups. File upload is not malware scanning or
-content sanitization; keep the API private until authentication and
-authorization are in place.
+Authentication and authorization are not implemented yet. Profile IDs scope
+requests but do not authenticate the caller; do not expose these endpoints on a
+public or shared multi-user deployment.
 
 ## Database migrations
 
@@ -84,11 +96,29 @@ from `backend` with:
 ```powershell
 .\.venv\Scripts\alembic.exe revision --autogenerate -m "describe schema change"
 .\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\alembic.exe check
 ```
 
 Review every generated migration before applying it. Alembic autogeneration
 compares `Base.metadata` with the configured database; it does not replace
 manual migration review.
+
+## CV text extraction and evidence
+
+The backend dependencies install PyMuPDF and python-docx for local PDF and DOCX
+parsing. No additional configuration or external service is required. Run
+extraction on an uploaded document using the `POST` endpoint above, inspect its
+`status` and `error_category`, then fetch extracted text. A successful
+extraction reports `trust_status: "unverified_source_text"`; only evidence
+explicitly reviewed by the candidate should be marked candidate-confirmed.
+
+The extraction and evidence tests use synthetic documents and in-memory
+SQLite; they do not require PostgreSQL. From `backend`, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_document_extraction_and_evidence.py
+.\.venv\Scripts\python.exe -m pytest
+```
 
 ## Frontend
 

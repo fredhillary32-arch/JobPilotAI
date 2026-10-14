@@ -13,7 +13,9 @@ dependencies = [
     "fastapi>=0.115,<1",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.7,<3",
+    "python-docx>=1.2,<2",
     "python-multipart>=0.0.20,<1",
+    "pymupdf>=1.28.2,<2",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.34,<1",
 ]

@@ -89,6 +89,13 @@ class CandidateProfile(TimestampMixin, Base):
         passive_deletes=True,
         order_by="CandidateDocument.created_at.desc()",
     )
+    evidence_records: Mapped[list["CandidateEvidence"]] = relationship(
+        back_populates="candidate_profile",
+        cascade="all, delete-orphan",
+        overlaps="source_document,evidence_records",
+        passive_deletes=True,
+        order_by="CandidateEvidence.created_at.desc()",
+    )
 
 
 class CandidateWorkExperience(TimestampMixin, Base):
