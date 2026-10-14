@@ -9,6 +9,7 @@ description = "JobPilot AI backend API"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.14,<2",
+    "email-validator>=2.2,<3",
     "fastapi>=0.115,<1",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.7,<3",

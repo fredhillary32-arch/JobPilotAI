@@ -35,6 +35,11 @@ and `POSTGRES_DB` are required. `POSTGRES_HOST` defaults to `127.0.0.1` and
   the database.
 - `GET http://127.0.0.1:8000/readyz` executes `SELECT 1` and returns HTTP 503 if
   the database connection is unavailable.
+- Candidate profiles are available under `/api/v1/candidate-profiles`: create
+  with `POST`, retrieve by ID with `GET`, partially update with `PATCH`, and list
+  experiences, education, skills, or certifications with their respective
+  `/{profile_id}/experiences`, `/education`, `/skills`, and `/certifications`
+  endpoints.
 
 Run backend tests from `backend` with:
 
@@ -44,8 +49,9 @@ Run backend tests from `backend` with:
 
 ## Database migrations
 
-No application models or initial migration are included yet. Once models are
-added under `app.models` and imported there, create a migration from `backend`:
+Candidate profile models are registered with Alembic metadata. After inspecting
+and editing the generated migration, create and apply future schema changes
+from `backend` with:
 
 ```powershell
 .\.venv\Scripts\alembic.exe revision --autogenerate -m "describe schema change"
