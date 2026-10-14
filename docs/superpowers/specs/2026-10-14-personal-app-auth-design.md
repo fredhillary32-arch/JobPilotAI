@@ -40,11 +40,25 @@ configuration proxies `/api` to `127.0.0.1:8000`, allowing the normal browser
 flow to remain same-origin.
 
 Cookies are sent automatically, so protect login and all state-changing
-requests with same-origin/`Origin` validation and a session-bound CSRF token
-sent in a request header. Do not treat `SameSite` alone as the CSRF defense.
-The current API has no CORS middleware; do not add permissive credentialed
-CORS. If a separate origin is introduced later, allow only explicitly
-configured origins with credentials and retain CSRF checks.
+requests with same-origin/`Origin` validation and a CSRF token sent in a
+request header. Before login, the browser obtains a short-lived
+pre-authentication CSRF token from a minimal endpoint. Bind it to a short-lived
+`HttpOnly`, `SameSite=Strict` pre-authentication cookie, for example by signing
+the token together with the cookie nonce using a server secret. The login
+request sends the token in a header and the cookie automatically; the server
+validates the token, its expiry and cookie binding, and the exact allowed
+`Origin` before checking credentials. Reject missing, invalid, expired, or
+replayed pre-authentication challenges; clear the challenge cookie after
+success or expiry. Keep the token in frontend memory only.
+
+After login, issue a separate CSRF token bound to the authenticated session;
+the server returns it only during login/session restoration and validates it
+alongside the session cookie for every state-changing request. Revoke or expire
+it with its session. Keep it in frontend memory, not local storage. Do not
+treat `SameSite` alone as the CSRF defense. The current API has no CORS
+middleware; do not add permissive credentialed CORS. If a separate origin is
+introduced later, allow only explicitly configured origins with credentials
+and retain CSRF checks.
 
 ## 3. Initial account and recovery
 
@@ -91,10 +105,14 @@ head; the live database revision was not checked for this design.
 ## 5. Authorization coverage
 
 Every application endpoint must require a valid session, except the minimal
-login operation needed to establish one. Logout requires a valid session;
-session restoration reveals only the current account's minimal identity.
-Apply authenticated authorization to the existing `/healthz` and `/readyz`
-endpoints too, keeping their responses non-sensitive.
+pre-authentication CSRF, login, and health-check endpoints. Logout requires a
+valid session; session restoration reveals only the current account's minimal
+identity. Keep `/healthz` and `/readyz` unauthenticated for minimal local
+health checks: `/healthz` reports only process liveness, while `/readyz`
+reports generic readiness and may return a generic unavailable response.
+Neither endpoint may reveal credentials, connection strings, internal
+exception details, or other sensitive configuration. Bind both services and
+these endpoints to loopback; do not expose either endpoint publicly.
 
 For every resource request, scope the query to the authenticated user's
 profile ownership on the server. Continue validating parent/child
@@ -135,8 +153,12 @@ request remains server-authorized.
 ## 7. Essential controls and tests
 
 - Keep the API and Vite server loopback-only. Do not publish port bindings or
-  deployment configuration. Protect every API route by default, then test
-  anonymous access explicitly.
+  deployment configuration. Protect every application API route by default,
+  with only the minimal pre-authentication CSRF, login, `/healthz`, and
+  `/readyz` endpoints unauthenticated. Test anonymous access explicitly.
+- Keep health responses minimal and non-sensitive; ensure readiness failures
+  do not expose database credentials, connection strings, or internal
+  exception details. Do not expose health endpoints publicly.
 - Validate and normalize login email; use Argon2id, generic login errors,
   bounded request sizes, and rate limiting for login attempts. Choose the
   limiter implementation without adding an external service unless a measured
@@ -168,8 +190,10 @@ request remains server-authorized.
 2. **Bootstrap and session API:** One local owner can be created once, log in,
    restore a session, log out, and reset a password locally; session expiry and
    revocation work.
-3. **Server authorization:** Every listed endpoint and file download requires
-   authentication and ownership; cross-user and anonymous tests pass without
+3. **Server authorization:** Every candidate-owned endpoint and file download
+   requires authentication and ownership; only the documented
+   pre-authentication and minimal health endpoints are unauthenticated.
+   Cross-user, anonymous-access, and health-response tests pass without
    weakening existing association or evidence checks.
 4. **Frontend session flow:** Login gates workspace loading; refresh restores
    only a valid session; logout clears candidate state and remembered profile
