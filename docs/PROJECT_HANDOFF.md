@@ -114,9 +114,10 @@ Check migration revision and drift from `backend`:
 
 ## Git state
 
-The working branch is `main`. At handoff preparation, the base commit was
-`c9f25e8` (`Build JobPilot candidate workspace frontend`). The candidate
-profile CRUD checkpoint commit has not yet been created.
+The working branch is `main`. The candidate profile CRUD checkpoint is
+`7ef52fd` (`Complete candidate profile CRUD management`), based on
+`c9f25e8` (`Build JobPilot candidate workspace frontend`). This handoff records
+that checkpoint; its documentation update is committed separately.
 
 ## Next milestone and sequence
 
