@@ -8,9 +8,11 @@ from app.models.candidate_profile import (
     CandidateSkill,
     CandidateWorkExperience,
 )
+from app.models.candidate_document import CandidateDocument
 
 __all__ = [
     "Base",
+    "CandidateDocument",
     "CandidateCertification",
     "CandidateEducation",
     "CandidateProfile",

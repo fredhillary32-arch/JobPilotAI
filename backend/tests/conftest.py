@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_db_session
 from app.main import app
 from app.models import CandidateProfile
+from app.services.documents import LocalDocumentStorage, get_document_storage
 
 
 @pytest.fixture
@@ -30,6 +31,7 @@ def database() -> Generator[tuple[Engine, sessionmaker[Session]], None, None]:
 @pytest.fixture
 def api_client(
     database: tuple[Engine, sessionmaker[Session]],
+    tmp_path,
 ) -> Generator[TestClient, None, None]:
     _, factory = database
 
@@ -41,11 +43,15 @@ def api_client(
             session.close()
 
     app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_document_storage] = lambda: LocalDocumentStorage(
+        tmp_path / "private-documents"
+    )
     try:
         with TestClient(app) as client:
             yield client
     finally:
         app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_document_storage, None)
 
 
 @pytest.fixture

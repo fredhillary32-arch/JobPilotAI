@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     postgres_db: str = Field(validation_alias="POSTGRES_DB")
     postgres_host: str = Field(default="127.0.0.1", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5433, validation_alias="POSTGRES_PORT")
+    document_storage_path: Path = Field(
+        default=PROJECT_ROOT / "var" / "documents",
+        validation_alias="DOCUMENT_STORAGE_PATH",
+    )
 
     @property
     def database_url(self) -> URL:
@@ -33,6 +37,12 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
+
+    @property
+    def resolved_document_storage_path(self) -> Path:
+        if self.document_storage_path.is_absolute():
+            return self.document_storage_path
+        return PROJECT_ROOT / self.document_storage_path
 
 
 @lru_cache

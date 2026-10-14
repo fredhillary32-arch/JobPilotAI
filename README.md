@@ -40,12 +40,40 @@ and `POSTGRES_DB` are required. `POSTGRES_HOST` defaults to `127.0.0.1` and
   experiences, education, skills, or certifications with their respective
   `/{profile_id}/experiences`, `/education`, `/skills`, and `/certifications`
   endpoints.
+- Original CVs and supporting documents can be uploaded to
+  `/api/v1/candidate-profiles/{profile_id}/documents`, listed from the same
+  endpoint, retrieved by document ID, and downloaded from the document's
+  `/download` endpoint. Uploads accept PDF, DOCX, and UTF-8 TXT files up to 10
+  MB. Every upload creates an immutable document record; uploading a new CV
+  never replaces a prior source file.
+- Original CVs and supporting documents can be uploaded under
+  `/api/v1/candidate-profiles/{profile_id}/documents`, listed with `GET` on that
+  path, and retrieved by document ID. Download the original bytes from the
+  document's `/download` endpoint. Uploads accept PDF, DOCX, or UTF-8 TXT files
+  up to 10 MB. Original uploads are immutable; new files create new records.
 
 Run backend tests from `backend` with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+Document file bytes are stored outside PostgreSQL in a private local directory,
+`var/documents` by default. Set `DOCUMENT_STORAGE_PATH` in `.env` to use another
+location. The file-store interface allows replacement with a protected object
+storage implementation later. Restrict access to the storage directory and
+include it in access-controlled backups. Upload checks format, declared MIME
+type, and maximum size but does not perform malware scanning. Keep the API
+private until authentication and authorization are implemented.
+
+Document files are stored outside PostgreSQL under `var/documents` by default.
+Set `DOCUMENT_STORAGE_PATH` to an absolute private directory in `.env` to choose
+another location. The local storage implementation is behind a storage
+interface so a protected object-storage implementation can replace it later.
+Restrict filesystem access to the application process and include this storage
+location in access-controlled backups. File upload is not malware scanning or
+content sanitization; keep the API private until authentication and
+authorization are in place.
 
 ## Database migrations
 
