@@ -66,6 +66,15 @@ and `POSTGRES_DB` are required. `POSTGRES_HOST` defaults to `127.0.0.1` and
   to `candidate_confirmed` or `rejected` only after candidate review. Offsets
   refer to the normalized extracted text and evidence is not independently
   verified.
+- Create, list, and retrieve profile-scoped job descriptions at
+  `/api/v1/candidate-profiles/{profile_id}/job-descriptions`. Create a tailored
+  CV draft with
+  `POST /api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts`.
+  List drafts at `/api/v1/candidate-profiles/{profile_id}/cv-drafts` and
+  retrieve an individual draft by ID. Each generation attempt creates a
+  separate stored draft. Failed validation returns HTTP 422 with the persisted
+  draft ID and actionable validation details; it does not return fabricated or
+  partial CV content.
 
 Run backend tests from `backend` with:
 
@@ -117,6 +126,37 @@ SQLite; they do not require PostgreSQL. From `backend`, run:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\test_document_extraction_and_evidence.py
+.\.venv\Scripts\python.exe -m pytest
+```
+
+## Evidence-backed CV drafts
+
+The local deterministic provider ranks candidate profile skills and work
+experience against each stored job description. It uses profile data and
+candidate-confirmed evidence only. Unreviewed and rejected document evidence
+are excluded. Unsupported requirements are recorded as validation gaps and
+are not copied into candidate claims. Every emitted claim has structured
+source references saved with the draft. Roles need five distinct substantive
+supported bullets; otherwise the attempt is saved as failed and the response
+identifies the role that needs more evidence. The provider does not invent
+claims, and does not contact an AI service.
+
+CV drafts contain the required single-column section order and plain text.
+The draft targets one page where the source material permits it, but does not
+shrink text to force one page. The frontend does not yet render/export the CV
+draft; use the API `generated_content` and `structured_content` response for
+review. See [CV_GENERATION_SPEC.md](./docs/CV_GENERATION_SPEC.md) for trust
+rules, layout, provider boundary, and current limitations.
+
+These endpoints are local-only until authentication and authorization exist.
+Profile-scoped IDs do not authenticate callers. Do not expose them publicly or
+use them as a shared multi-user service.
+
+CV generation tests use synthetic candidate data and the in-memory SQLite
+test database. From `backend`, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_cv_generation.py
 .\.venv\Scripts\python.exe -m pytest
 ```
 

@@ -11,12 +11,15 @@ from app.models.candidate_profile import (
 from app.models.candidate_document import CandidateDocument
 from app.models.candidate_evidence import CandidateEvidence
 from app.models.document_extraction import DocumentExtraction
+from app.models.cv_generation import CandidateJobDescription, TailoredCvDraft
 
 __all__ = [
     "Base",
     "CandidateDocument",
     "CandidateEvidence",
     "DocumentExtraction",
+    "CandidateJobDescription",
+    "TailoredCvDraft",
     "CandidateCertification",
     "CandidateEducation",
     "CandidateProfile",
