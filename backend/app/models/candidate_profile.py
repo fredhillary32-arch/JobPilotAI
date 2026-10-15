@@ -45,6 +45,16 @@ class CandidateProfile(TimestampMixin, Base):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_candidate_profiles_user_id",
+        ),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     contact_email: Mapped[str | None] = mapped_column(String(254))
     contact_phone: Mapped[str | None] = mapped_column(String(32))
@@ -59,6 +69,10 @@ class CandidateProfile(TimestampMixin, Base):
         server_default="[]",
     )
 
+    user: Mapped["User | None"] = relationship(
+        back_populates="candidate_profiles",
+        passive_deletes="all",
+    )
     work_experiences: Mapped[list["CandidateWorkExperience"]] = relationship(
         back_populates="candidate_profile",
         cascade="all, delete-orphan",

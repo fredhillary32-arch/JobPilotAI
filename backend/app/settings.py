@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -22,10 +22,27 @@ class Settings(BaseSettings):
     postgres_db: str = Field(validation_alias="POSTGRES_DB")
     postgres_host: str = Field(default="127.0.0.1", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5433, validation_alias="POSTGRES_PORT")
+    auth_allowed_origin: str = Field(
+        default="http://127.0.0.1:5173",
+        validation_alias="AUTH_ALLOWED_ORIGIN",
+    )
+    auth_local_http: bool = Field(default=False, validation_alias="AUTH_LOCAL_HTTP")
     document_storage_path: Path = Field(
         default=PROJECT_ROOT / "var" / "documents",
         validation_alias="DOCUMENT_STORAGE_PATH",
     )
+
+    @property
+    def auth_cookie_secure(self) -> bool:
+        return not self.auth_local_http
+
+    @model_validator(mode="after")
+    def validate_local_http_origin(self) -> "Settings":
+        if self.auth_local_http and self.auth_allowed_origin != "http://127.0.0.1:5173":
+            raise ValueError(
+                "Local HTTP authentication requires the approved loopback browser origin."
+            )
+        return self
 
     @property
     def database_url(self) -> URL:

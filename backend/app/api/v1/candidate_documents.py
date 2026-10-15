@@ -9,11 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.candidate_profiles import get_profile_or_404
+from app.api.v1.dependencies import require_authenticated_resource_access
 from app.db import DatabaseSession
 from app.models import CandidateDocument
 from app.schemas.candidate_document import CandidateDocumentRead, DocumentKind
 from app.services.documents import (
     DocumentStorage,
+    DocumentStorageError,
     DocumentTooLargeError,
     DocumentValidationError,
     EmptyDocumentError,
@@ -21,7 +23,11 @@ from app.services.documents import (
     validate_document,
 )
 
-router = APIRouter(prefix="/candidate-profiles", tags=["candidate documents"])
+router = APIRouter(
+    prefix="/candidate-profiles",
+    tags=["candidate documents"],
+    dependencies=[Depends(require_authenticated_resource_access)],
+)
 
 
 def _safe_filename(filename: str | None) -> str:
@@ -151,7 +157,13 @@ def download_candidate_document(
     document_storage: Annotated[DocumentStorage, Depends(get_document_storage)],
 ) -> FileResponse:
     document = read_candidate_document(profile_id, document_id, session)
-    path = document_storage.resolve(document.storage_key)
+    try:
+        path = document_storage.resolve(document.storage_key)
+    except DocumentStorageError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate document file not found",
+        ) from None
     if not path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

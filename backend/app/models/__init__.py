@@ -16,6 +16,12 @@ from app.models.cv_generation import (
     TailoredCvDraft,
     TailoredCvExport,
 )
+from app.models.user import (
+    AuthSession,
+    PreAuthChallenge,
+    ProfileOwnershipAdoption,
+    User,
+)
 
 __all__ = [
     "Base",
@@ -25,6 +31,10 @@ __all__ = [
     "CandidateJobDescription",
     "TailoredCvDraft",
     "TailoredCvExport",
+    "AuthSession",
+    "PreAuthChallenge",
+    "ProfileOwnershipAdoption",
+    "User",
     "CandidateCertification",
     "CandidateEducation",
     "CandidateProfile",

@@ -36,3 +36,5 @@ def test_readiness_check_returns_503_when_database_is_unavailable(
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Database unavailable"}
+    assert "connection failed" not in response.text
+    assert "SELECT" not in response.text

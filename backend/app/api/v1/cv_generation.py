@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.api.v1.candidate_profiles import get_profile_or_404
+from app.api.v1.dependencies import require_authenticated_resource_access
 from app.db import DatabaseSession
 from app.models import CandidateJobDescription, TailoredCvDraft
 from app.schemas.cv_generation import (
@@ -13,7 +14,11 @@ from app.schemas.cv_generation import (
 )
 from app.services.cv_generation import generate_cv_draft, persist_cv_draft
 
-router = APIRouter(prefix="/candidate-profiles", tags=["CV generation"])
+router = APIRouter(
+    prefix="/candidate-profiles",
+    tags=["CV generation"],
+    dependencies=[Depends(require_authenticated_resource_access)],
+)
 
 
 def _get_job_or_404(

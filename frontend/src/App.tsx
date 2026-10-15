@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { api, ApiError, loadWorkspace, saveBlob } from "./api/client";
+import {
+  api,
+  ApiError,
+  clearSessionCsrfToken,
+  loadWorkspace,
+  saveBlob,
+  setUnauthorizedHandler,
+} from "./api/client";
 import type {
   CandidateProfileInput,
   CertificationInput,
@@ -37,19 +44,56 @@ const configuredProfileId = import.meta.env.VITE_CANDIDATE_PROFILE_ID?.trim();
 
 export default function App() {
   const [profileId, setProfileId] = useState(
-    () => configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "",
+    "",
   );
+  const [authStatus, setAuthStatus] = useState<"restoring" | "authenticated" | "anonymous" | "error">("restoring");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authError, setAuthError] = useState("");
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [activeView, setActiveView] = useState<ViewName>("Dashboard");
-  const [loading, setLoading] = useState(
-    Boolean(configuredProfileId || window.localStorage.getItem("jobpilot.profileId")),
-  );
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const actionLock = useRef(false);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
+    const handleUnauthorized = () => {
+      clearSessionCsrfToken();
+      window.localStorage.removeItem("jobpilot.profileId");
+      setProfileId("");
+      setData(null);
+      setLoadError("");
+      setAuthEmail("");
+      setAuthStatus("anonymous");
+      setAuthError("");
+    };
+    setUnauthorizedHandler(handleUnauthorized);
+    api.restoreSession()
+      .then((session) => {
+        setAuthEmail(session.user.email);
+        setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+        setAuthStatus("authenticated");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) {
+          handleUnauthorized();
+        } else {
+          setData(null);
+          setProfileId("");
+          setAuthStatus("error");
+          setAuthError(errorMessage(error));
+        }
+      });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") {
+      setData(null);
+      setLoading(authStatus === "restoring");
+      return;
+    }
     if (!profileId) {
       setData(null);
       setLoading(false);
@@ -75,7 +119,55 @@ export default function App() {
     return () => {
       current = false;
     };
-  }, [profileId]);
+  }, [authStatus, profileId]);
+
+  async function restoreSession() {
+    setAuthStatus("restoring");
+    setAuthError("");
+    try {
+      const session = await api.restoreSession();
+      setAuthEmail(session.user.email);
+      setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+      setAuthStatus("authenticated");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAuthStatus("anonymous");
+      } else {
+        setAuthStatus("error");
+        setAuthError(errorMessage(error));
+      }
+    }
+  }
+
+  async function login(email: string, password: string) {
+    setAuthError("");
+    try {
+      const session = await api.login(email, password);
+      setAuthEmail(session.user.email);
+      setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+      setAuthStatus("authenticated");
+    } catch (error) {
+      setAuthError(errorMessage(error));
+      throw error;
+    }
+  }
+
+  async function logout() {
+    setAuthError("");
+    try {
+      await api.logout();
+      setAuthStatus("anonymous");
+    } catch (error) {
+      setAuthError(`You have been signed out of this workspace, but the server did not confirm session revocation: ${errorMessage(error)}`);
+      setAuthStatus("anonymous");
+    } finally {
+      clearSessionCsrfToken();
+      window.localStorage.removeItem("jobpilot.profileId");
+      setProfileId("");
+      setData(null);
+      setAuthEmail("");
+    }
+  }
 
   function selectProfile(id: string) {
     const normalizedId = id.trim();
@@ -108,7 +200,7 @@ export default function App() {
       return true;
     } catch (error) {
       setActionError(errorMessage(error));
-      if (profileId) {
+      if (profileId && !(error instanceof ApiError && error.status === 401)) {
         try {
           setData(await loadWorkspace(profileId));
         } catch (refreshError) {
@@ -175,11 +267,20 @@ export default function App() {
     saveBlob(await api.downloadExport(profileId, jobId, draftId, exportId), filename);
   }
 
+  if (authStatus === "restoring") {
+    return <main className="loading-screen"><div className="spinner" aria-hidden="true" /><p role="status">Restoring your secure session…</p></main>;
+  }
+  if (authStatus === "error") {
+    return <main className="loading-screen"><section className="auth-error panel"><h1>Could not restore your session</h1><p role="alert">{authError}</p><button className="button button-primary" onClick={() => void restoreSession()}>Try again</button></section></main>;
+  }
+  if (authStatus === "anonymous") {
+    return <LoginScreen onLogin={login} error={authError} />;
+  }
   if (loading) {
     return <main className="loading-screen"><div className="spinner" aria-hidden="true" /><p role="status">Connecting to your local JobPilot workspace…</p></main>;
   }
   if (!profileId || !data) {
-    return <ProfileStart onSelect={selectProfile} error={loadError} />;
+    return <ProfileStart onSelect={selectProfile} error={loadError} onLogout={() => void logout()} />;
   }
 
   const view = (() => {
@@ -231,7 +332,8 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="profile-mini"><span className="avatar">{data.profile.name.trim().charAt(0).toUpperCase()}</span><span><strong>{data.profile.name}</strong><small>{data.profile.professional_headline || "Candidate"}</small></span></div>
           <button className="switch-profile" onClick={switchProfile}>Switch profile</button>
-          <p className="local-label"><span /> Local-only · no sign-in</p>
+          <p className="local-label"><span /> Signed in as {authEmail}</p>
+          <button className="switch-profile" onClick={() => void logout()}>Sign out</button>
         </div>
       </aside>
       <main className="main-content">
@@ -242,13 +344,66 @@ export default function App() {
           {busy && <div className="inline-loading" role="status"><span className="spinner small" /> Saving your changes…</div>}
           {view}
         </div>
-        <footer className="app-footer">JobPilot AI <span>·</span> Evidence first, applications with care <span className="footer-security">Keep this local workspace private. Authentication is not yet available.</span></footer>
+        <footer className="app-footer">JobPilot AI <span>·</span> Evidence first, applications with care <span className="footer-security">Your workspace is protected by your secure session.</span></footer>
       </main>
     </div>
   );
 }
 
-function ProfileStart({ onSelect, error }: { onSelect: (id: string) => void; error: string }) {
+function LoginScreen({ onLogin, error }: {
+  onLogin: (email: string, password: string) => Promise<void>;
+  error: string;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await onLogin(email, password);
+      setPassword("");
+    } catch {
+      setFormError("Sign-in was unsuccessful. Check your credentials and try again.");
+      setPassword("");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <main className="setup-shell">
+    <section className="setup-card login-card">
+      <a className="brand setup-brand" href="#" onClick={(event) => event.preventDefault()}>
+        <span className="brand-mark">J</span><span>jobpilot<span className="brand-ai">.ai</span><small>CAREER WORKSPACE</small></span>
+      </a>
+      <p className="eyebrow">Private candidate workspace</p>
+      <h1>Sign in to JobPilot</h1>
+      <p className="setup-intro">Use your local owner account to access your candidate workspace.</p>
+      {(formError || error) && <p className="feedback-error setup-error" role="alert">{formError || error}</p>}
+      <form onSubmit={(event) => void submit(event)} className="setup-form">
+        <Field label="Email address" required>
+          <input autoComplete="username" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+        </Field>
+        <Field label="Password" required>
+          <input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+        </Field>
+        <button className="button button-primary button-wide" disabled={submitting} type="submit">
+          {submitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+      <p className="setup-warning">Session credentials are held in a secure, HttpOnly cookie. This application does not offer public registration.</p>
+    </section>
+  </main>;
+}
+
+function ProfileStart({ onSelect, error, onLogout }: {
+  onSelect: (id: string) => void;
+  error: string;
+  onLogout: () => void;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [existingId, setExistingId] = useState("");
@@ -277,19 +432,20 @@ function ProfileStart({ onSelect, error }: { onSelect: (id: string) => void; err
       <a className="brand setup-brand" href="#"><span className="brand-mark">J</span><span>jobpilot<span className="brand-ai">.ai</span><small>CAREER WORKSPACE</small></span></a>
       <p className="eyebrow">Welcome to your local workspace</p>
       <h1>{error ? "Connect a candidate profile" : "Start with your profile"}</h1>
-      <p className="setup-intro">{error ? `The saved profile could not be loaded: ${error}` : "Use an existing profile ID from your local API, or create a new candidate profile to begin."}</p>
+      <p className="setup-intro">{error ? `The saved profile could not be loaded: ${error}` : "Create a candidate profile or open one you own to begin."}</p>
       {formError && <p className="feedback-error setup-error" role="alert">{formError}</p>}
       <form onSubmit={create} className="setup-form">
         <Field label="Your name" required><input autoComplete="name" maxLength={200} required value={name} onChange={(event) => setName(event.target.value)} /></Field>
         <Field label="Email (optional)"><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
         <button className="button button-primary button-wide" disabled={creating} type="submit">{creating ? "Creating profile…" : "Create candidate profile"}</button>
       </form>
-      <div className="setup-divider"><span>or connect an existing one</span></div>
+      <div className="setup-divider"><span>or open a profile you own</span></div>
       <form className="existing-profile-form" onSubmit={(event) => { event.preventDefault(); if (existingId.trim()) onSelect(existingId); }}>
         <Field label="Candidate profile ID"><input autoComplete="off" placeholder="Paste profile UUID" value={existingId} onChange={(event) => setExistingId(event.target.value)} /></Field>
         <button className="button button-secondary button-wide" disabled={!existingId.trim()} type="submit">Open profile</button>
       </form>
-      <p className="setup-warning"><strong>Local-only access.</strong> The API does not yet implement authentication. Do not expose this workspace publicly or share it with other users.</p>
+      <p className="setup-warning">Profile selection is only a convenience; the server verifies ownership for every request.</p>
+      <button className="button button-secondary button-wide" onClick={onLogout}>Sign out</button>
     </section>
   </main>;
 }

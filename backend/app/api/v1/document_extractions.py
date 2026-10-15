@@ -5,13 +5,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.api.v1.candidate_profiles import get_profile_or_404
+from app.api.v1.dependencies import require_authenticated_resource_access
 from app.db import DatabaseSession
 from app.models import CandidateDocument, DocumentExtraction
 from app.schemas.document_extraction import DocumentExtractionRead, ExtractedTextRead
 from app.services.documents import DocumentStorage, get_document_storage
 from app.services.extraction import ExtractionFailure, extract_document_text
 
-router = APIRouter(prefix="/candidate-profiles", tags=["document extraction"])
+router = APIRouter(
+    prefix="/candidate-profiles",
+    tags=["document extraction"],
+    dependencies=[Depends(require_authenticated_resource_access)],
+)
 
 
 def _get_document_or_404(

@@ -341,6 +341,9 @@ td:first-child { color: #3d4d45; font-weight: 600; }
 .setup-divider::before, .setup-divider::after { height: 1px; flex: 1; background: #e8edea; content: ""; }
 .setup-warning { margin: 19px 0 0; padding: 11px; border-radius: 7px; background: #fff8e9; color: #806a3c; font-size: 10px; line-height: 1.55; }
 .setup-error { margin-bottom: 13px; padding: 10px; border-radius: 7px; font-size: 11px; }
+.auth-error { width: min(100% - 36px, 460px); text-align: center; }
+.auth-error p { color: var(--muted); line-height: 1.6; }
+.login-card .setup-warning { background: #f1f6f3; color: #64756d; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
 @media (max-width: 1000px) {

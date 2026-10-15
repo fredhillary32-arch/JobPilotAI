@@ -77,9 +77,19 @@ const draft = {
 let evidenceStatus = "unreviewed";
 let exports: Array<Record<string, unknown>>;
 let profileRecords: Record<string, Array<Record<string, unknown>>>;
-let requests: Array<{ path: string; method: string; body: string | null }> = [];
+let requests: Array<{
+  path: string;
+  method: string;
+  body: string | null;
+  headers: Headers;
+  credentials: RequestCredentials | undefined;
+  mode: RequestMode | undefined;
+}> = [];
 let failJobSave = false;
 let failProfileRecordSave = false;
+let sessionValid = true;
+let failSessionRestore = false;
+let expireNextPrivateRequest = false;
 
 function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -111,7 +121,35 @@ function responseFor(url: string, init: RequestInit = {}): Response {
     path,
     method,
     body: body || (init.body instanceof FormData ? "[form-data]" : null),
+    headers: new Headers(init.headers),
+    credentials: init.credentials,
+    mode: init.mode,
   });
+
+  if (path === "/api/v1/auth/session" && method === "GET") {
+    if (failSessionRestore) return jsonResponse({ detail: "Session service unavailable." }, 503);
+    if (!sessionValid) return jsonResponse({ detail: "Not authenticated." }, 401);
+    return jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: "session-csrf-test" });
+  }
+  if (path === "/api/v1/auth/pre-auth-csrf" && method === "GET") {
+    return jsonResponse({ csrf_token: "pre-auth-csrf-test" });
+  }
+  if (path === "/api/v1/auth/login" && method === "POST") {
+    if (JSON.parse(body || "{}").password !== "correct horse") {
+      return jsonResponse({ detail: "Invalid credentials." }, 401);
+    }
+    sessionValid = true;
+    return jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: "session-csrf-test" });
+  }
+  if (path === "/api/v1/auth/logout" && method === "POST") {
+    sessionValid = false;
+    return new Response(null, { status: 204 });
+  }
+  if (expireNextPrivateRequest && path.includes("/candidate-profiles/")) {
+    expireNextPrivateRequest = false;
+    sessionValid = false;
+    return jsonResponse({ detail: "Not authenticated." }, 401);
+  }
 
   if (path === `/api/v1/candidate-profiles/${profileId}`) {
     if (method === "PATCH") {
@@ -283,6 +321,9 @@ describe("JobPilot frontend", () => {
     requests = [];
     failJobSave = false;
     failProfileRecordSave = false;
+    sessionValid = true;
+    failSessionRestore = false;
+    expireNextPrivateRequest = false;
     window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn((url: string | URL, init?: RequestInit) =>
       Promise.resolve(responseFor(String(url), init)),
@@ -300,6 +341,106 @@ describe("JobPilot frontend", () => {
     expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
   });
 
+  it("restores the session before requesting private workspace data", async () => {
+    let releaseSession: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((url: string | URL, init?: RequestInit) => {
+      const path = new URL(String(url), "http://localhost").pathname;
+      if (path === "/api/v1/auth/session" && !releaseSession) {
+        return new Promise<Response>((resolve) => { releaseSession = resolve; });
+      }
+      return Promise.resolve(responseFor(String(url), init));
+    }));
+    window.localStorage.setItem("jobpilot.profileId", profileId);
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Restoring your secure session");
+    expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(false);
+    releaseSession?.(jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: "session-csrf-test" }));
+    expect(await screen.findByRole("heading", { name: "Good to see you, Taylor" })).toBeInTheDocument();
+  });
+
+  it("logs in through a pre-auth challenge and uses same-origin requests", async () => {
+    sessionValid = false;
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(await screen.findByRole("textbox", { name: "Email address" }), "owner@example.test");
+    await user.type(screen.getByLabelText(/Password/), "correct horse");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("heading", { name: "Start with your profile" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Candidate profile ID" }), profileId);
+    await user.click(screen.getByRole("button", { name: "Open profile" }));
+    expect(await screen.findByRole("heading", { name: "Good to see you, Taylor" })).toBeInTheDocument();
+    const challengeIndex = requests.findIndex((request) => request.path.endsWith("/auth/pre-auth-csrf"));
+    const loginIndex = requests.findIndex((request) => request.path.endsWith("/auth/login"));
+    expect(challengeIndex).toBeGreaterThan(-1);
+    expect(loginIndex).toBeGreaterThan(challengeIndex);
+    expect(requests[loginIndex].headers.get("X-CSRF-Token")).toBe("pre-auth-csrf-test");
+    expect(requests[loginIndex].credentials).toBe("same-origin");
+    expect(requests[loginIndex].mode).toBe("same-origin");
+    expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBe(profileId);
+  });
+
+  it("shows a generic error for failed login and does not load private data", async () => {
+    sessionValid = false;
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(await screen.findByRole("textbox", { name: "Email address" }), "owner@example.test");
+    await user.type(screen.getByLabelText(/Password/), "incorrect");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Sign-in was unsuccessful.");
+    expect(screen.getByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(false);
+  });
+
+  it("shows the login screen for expired sessions without retaining selected profile data", async () => {
+    sessionValid = false;
+    window.localStorage.setItem("jobpilot.profileId", profileId);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(false);
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBeNull();
+  });
+
+  it("clears workspace selection and posts the session CSRF token on logout", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    const logoutRequest = requests.find((request) => request.path.endsWith("/auth/logout"));
+    expect(logoutRequest?.headers.get("X-CSRF-Token")).toBe("session-csrf-test");
+    expect(logoutRequest?.credentials).toBe("same-origin");
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBeNull();
+    expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(true);
+  });
+
+  it("returns to login and clears selected profile when an active session expires", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    expireNextPrivateRequest = true;
+    await user.click(screen.getByRole("button", { name: "Candidate profile" }));
+    await user.clear(screen.getByRole("textbox", { name: /Professional headline/ }));
+    await user.type(screen.getByRole("textbox", { name: /Professional headline/ }), "Systems Engineer");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBeNull();
+  });
+
+  it("does not load private data when session restoration fails", async () => {
+    failSessionRestore = true;
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Could not restore your session" })).toBeInTheDocument();
+    expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(false);
+  });
+
   it("shows a loading state while the API responds", async () => {
     window.localStorage.setItem("jobpilot.profileId", profileId);
     let releaseProfile: ((response: Response) => void) | undefined;
@@ -314,6 +455,8 @@ describe("JobPilot frontend", () => {
     }));
     render(<App />);
 
+    expect(screen.getByRole("status")).toHaveTextContent("Restoring your secure session");
+    await waitFor(() => expect(releaseProfile).toBeDefined());
     expect(screen.getByRole("status")).toHaveTextContent("Connecting to your local JobPilot workspace");
     releaseProfile?.(jsonResponse(profile));
     expect(await screen.findByRole("heading", { name: "Good to see you, Taylor" })).toBeInTheDocument();

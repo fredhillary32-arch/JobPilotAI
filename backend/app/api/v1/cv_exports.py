@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.candidate_profiles import get_profile_or_404
+from app.api.v1.dependencies import require_authenticated_resource_access
 from app.db import DatabaseSession
 from app.models import (
     CandidateDocument,
@@ -23,7 +24,11 @@ from app.services.cv_export import (
 )
 from app.services.documents import DocumentStorage, get_document_storage
 
-router = APIRouter(prefix="/candidate-profiles", tags=["CV exports"])
+router = APIRouter(
+    prefix="/candidate-profiles",
+    tags=["CV exports"],
+    dependencies=[Depends(require_authenticated_resource_access)],
+)
 GENERATED_FILENAME = re.compile(r"jobpilot-cv-[0-9a-f]{32}\.(?:pdf|docx)\Z")
 
 

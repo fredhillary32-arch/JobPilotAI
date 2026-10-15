@@ -1,12 +1,17 @@
 from datetime import date
-from typing import TypeVar
+from typing import Annotated, TypeVar
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import Base, DatabaseSession
+from app.api.v1.dependencies import (
+    AuthenticatedSession,
+    get_authenticated_session,
+    require_authenticated_resource_access,
+)
 from app.models import (
     CandidateCertification,
     CandidateEducation,
@@ -32,7 +37,11 @@ from app.schemas.candidate_profile import (
     CandidateWorkExperienceRead,
 )
 
-router = APIRouter(prefix="/candidate-profiles", tags=["candidate profiles"])
+router = APIRouter(
+    prefix="/candidate-profiles",
+    tags=["candidate profiles"],
+    dependencies=[Depends(require_authenticated_resource_access)],
+)
 RecordT = TypeVar("RecordT", bound=Base)
 
 
@@ -118,8 +127,15 @@ def _commit_skill(session: DatabaseSession) -> None:
 def create_candidate_profile(
     payload: CandidateProfileCreate,
     session: DatabaseSession,
+    authenticated: Annotated[
+        AuthenticatedSession,
+        Depends(get_authenticated_session),
+    ],
 ) -> CandidateProfile:
-    profile = CandidateProfile(**payload.model_dump())
+    profile = CandidateProfile(
+        user_id=authenticated.user.id,
+        **payload.model_dump(),
+    )
     session.add(profile)
     session.commit()
     session.refresh(profile)

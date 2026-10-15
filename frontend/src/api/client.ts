@@ -3,6 +3,7 @@ import type {
   CandidateEvidence,
   CandidateProfile,
   CandidateProfileInput,
+  SessionResponse,
   CertificationInput,
   Certification,
   CvDraft,
@@ -24,6 +25,18 @@ import type {
 const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
 export const API_BASE_URL =
   (configuredBase || "/api/v1").replace(/\/+$/, "");
+
+let sessionCsrfToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
+let sessionRestorePromise: Promise<SessionResponse> | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
+export function clearSessionCsrfToken(): void {
+  sessionCsrfToken = null;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -53,8 +66,18 @@ function detailMessage(detail: unknown): string {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const method = (init?.method || "GET").toUpperCase();
+  const headers = new Headers(init?.headers);
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && sessionCsrfToken) {
+    headers.set("X-CSRF-Token", sessionCsrfToken);
+  }
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, init);
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: "same-origin",
+      mode: "same-origin",
+    });
   } catch {
     throw new ApiError(
       0,
@@ -69,7 +92,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       data = null;
     }
-    throw new ApiError(response.status, detailMessage(data), data);
+    const error = new ApiError(response.status, detailMessage(data), data);
+    if (response.status === 401) unauthorizedHandler?.();
+    throw error;
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
@@ -85,6 +110,49 @@ const profilePath = (profileId: string) =>
   `/candidate-profiles/${encodeURIComponent(profileId)}`;
 
 export const api = {
+  restoreSession(): Promise<SessionResponse> {
+    if (!sessionRestorePromise) {
+      sessionRestorePromise = request<SessionResponse>("/auth/session")
+        .then((session) => {
+          sessionCsrfToken = session.csrf_token;
+          return session;
+        })
+        .finally(() => {
+          sessionRestorePromise = null;
+        });
+    }
+    return sessionRestorePromise;
+  },
+  async login(email: string, password: string): Promise<SessionResponse> {
+    clearSessionCsrfToken();
+    const challenge = await request<{ csrf_token: string }>("/auth/pre-auth-csrf", {
+      method: "GET",
+      credentials: "same-origin",
+      mode: "same-origin",
+    });
+    const session = await request<SessionResponse>(
+      "/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": challenge.csrf_token,
+        },
+        body: JSON.stringify({ email, password }),
+        credentials: "same-origin",
+        mode: "same-origin",
+      },
+    );
+    sessionCsrfToken = session.csrf_token;
+    return session;
+  },
+  async logout(): Promise<void> {
+    try {
+      await request<void>("/auth/logout", { method: "POST" });
+    } finally {
+      clearSessionCsrfToken();
+    }
+  },
   getProfile: (id: string) =>
     request<CandidateProfile>(profilePath(id)),
   createProfile: (payload: CandidateProfileInput) =>
@@ -247,7 +315,10 @@ export const api = {
 async function download(path: string): Promise<Blob> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`);
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: "same-origin",
+      mode: "same-origin",
+    });
   } catch {
     throw new ApiError(0, "The download could not reach the local API.", null);
   }
@@ -258,7 +329,9 @@ async function download(path: string): Promise<Blob> {
     } catch {
       data = null;
     }
-    throw new ApiError(response.status, detailMessage(data), data);
+    const error = new ApiError(response.status, detailMessage(data), data);
+    if (response.status === 401) unauthorizedHandler?.();
+    throw error;
   }
   return response.blob();
 }

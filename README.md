@@ -99,9 +99,12 @@ Extracted content must be treated as untrusted input and is never an instruction
 to the application or a future AI system. Restrict filesystem and database
 access and include both in access-controlled backups.
 
-Authentication and authorization are not implemented yet. Profile IDs scope
-requests but do not authenticate the caller; do not expose these endpoints on a
-public or shared multi-user deployment.
+The API now requires a valid session for candidate-resource routes. Profile
+IDs are selectors only: the server checks ownership for each request, and
+unassigned legacy profiles remain inaccessible until explicitly adopted by the
+local operator. Login has no public registration flow. Keep the app local and
+loopback-only; this implementation has not been verified against the configured
+PostgreSQL database or through a real browser-to-API workflow.
 
 ## Database migrations
 
@@ -175,9 +178,9 @@ earlier exports are not overwritten. No AI service receives candidate content.
 See [CV_GENERATION_SPEC.md](./docs/CV_GENERATION_SPEC.md) for trust rules,
 layout, provider boundary, export behavior, and current limitations.
 
-These endpoints are local-only until authentication and authorization exist.
-Profile-scoped IDs do not authenticate callers. Do not expose them publicly or
-use them as a shared multi-user service.
+These endpoints remain local-only. Authentication and ownership checks do not
+make this a public or shared multi-user service; do not expose it beyond the
+local machine.
 
 CV generation tests use synthetic candidate data and the in-memory SQLite
 test database. From `backend`, run:
@@ -196,9 +199,9 @@ Export tests use synthetic CV content and in-memory SQLite. Run them from
 
 ## Frontend
 
-The React workspace calls the existing profile, document, extraction, evidence,
-job-description, draft, and export endpoints. From the repository root, run
-the backend locally in one terminal:
+The React workspace restores the authenticated session before loading any
+profile, document, extraction, evidence, job-description, draft, or export
+data. From the repository root, run the backend locally in one terminal:
 
 ```powershell
 Set-Location backend
@@ -214,12 +217,13 @@ npm run dev
 ```
 
 The Vite development and preview servers proxy `/api` requests to
-`http://127.0.0.1:8000`. Set the non-secret `VITE_API_BASE_URL` variable at
-build/start time to override the API base (include `/api/v1`), or set
-`VITE_CANDIDATE_PROFILE_ID` to preselect an existing profile ID. Without that
-setting, the workspace asks for an existing profile ID or creates a profile
-through the API; it remembers the selected ID in browser local storage. No
-candidate record or successful API response is bundled into the frontend.
+`http://127.0.0.1:8000`. Set the non-secret `VITE_API_BASE_URL` variable at build/start time to override
+the API base (include `/api/v1`), or set `VITE_CANDIDATE_PROFILE_ID` to
+preselect a profile after sign-in. The selected profile is only a convenience;
+the API authorizes every request. The frontend keeps session credentials in an
+HttpOnly cookie and the CSRF token in memory, never browser storage. On logout
+or an expired session it clears workspace state and the remembered profile ID.
+No candidate record or successful API response is bundled into the frontend.
 
 The workspace supports profile updates and create, list, edit, and delete
 operations for work experience, education, skills, and certifications.
@@ -236,9 +240,12 @@ npm test
 npm run build
 ```
 
-The API currently has no authentication or authorization. Keep both frontend
-and backend on a trusted local machine; do not expose the API or serve this as
-a shared public application. A production frontend on a different origin
-requires an explicitly configured same-origin API proxy or appropriately
-restricted backend CORS configuration, which is not added in this local-only
-milestone.
+The login flow requires the exact configured browser Origin, pre-login and
+session-bound CSRF tokens, and same-origin API requests through the existing
+Vite `/api` proxy. For local HTTP development, explicitly enable
+`AUTH_LOCAL_HTTP=true` only while both services are bound to loopback; cookies
+are Secure by default and Secure over HTTPS. Do not add permissive credentialed
+CORS or expose health endpoints publicly. See
+[docs/PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md) for the verified status,
+remaining database/integration blockers, and the safe migration and owner
+setup runbook.

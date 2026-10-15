@@ -9,6 +9,16 @@ export type EvidenceCategory =
   | "metric";
 export type ExportFormat = "pdf" | "docx";
 
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+}
+
+export interface SessionResponse {
+  user: AuthenticatedUser;
+  csrf_token: string;
+}
+
 export interface CandidateProfile {
   id: string;
   name: string;
