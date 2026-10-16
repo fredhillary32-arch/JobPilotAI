@@ -1,9 +1,76 @@
 # JobPilot AI Project Handoff
 
-**Status:** Authentication Stages 1-7 are implemented in the current
-uncommitted worktree. This Stage 8 handoff records source review and automated
-test results from 2026-10-15. It does not certify the configured PostgreSQL
-database or a real browser/API workflow.
+**Status:** Authentication Stages 1-7 were committed and pushed in
+`c2985cb5b65fa813e04670e92437ad055f9596f1`. A full audit on 2026-10-15
+(see "2026-10-15 audit" below) found that the configured database has not been
+migrated to the authentication schema, so the authenticated app cannot yet run
+against it. This handoff does not certify the configured PostgreSQL database
+or a real browser/API workflow.
+
+## 2026-10-15 audit
+
+Findings and corrections (uncommitted at the time of writing):
+
+- **Blocker: configured database not migrated.** A read-only query showed the
+  configured `jobpilot` database at revision `7ce347caa873` with no `users`,
+  `auth_sessions`, or `candidate_profiles.user_id`. The code requires
+  `d4f7a19c2b86`. The database held zero candidate profiles, documents,
+  evidence, job descriptions, drafts, and exports, so no legacy profile needs
+  adoption. The configured private document directory held zero files.
+- **Fixed: readiness reported ready on an outdated schema.** `/readyz` now
+  also compares the Alembic revision with the repository head and returns a
+  generic 503 if they differ. Verified read-only against the configured
+  database: it now returns 503 "Database schema is not current".
+- **Fixed: profiles were unreachable after logout.** Logout clears the
+  remembered profile ID, the UI never displays profile UUIDs, and there was no
+  endpoint to list owned profiles. Added `GET /api/v1/candidate-profiles`
+  (owner-scoped) and a profile picker after sign-in.
+- **Fixed: the default Vite address broke sign-in.** `npm run dev` served
+  `http://localhost:5173`, but the API accepts only the Origin
+  `http://127.0.0.1:5173`. Vite now binds to `127.0.0.1:5173` with
+  `strictPort` (verified listener address).
+- **Fixed: a CSRF token rotated in another tab broke mutations.** Session
+  restoration rotates the CSRF token; the client now restores the session and
+  retries once on a CSRF-verification 403 (never for login or Origin failures).
+- **Fixed:** a stale dashboard notice saying sign-in did not exist;
+  `.env.example` now documents `AUTH_ALLOWED_ORIGIN` and `AUTH_LOCAL_HTTP`.
+- **Added:** a route-derived test that every API route except pre-auth CSRF
+  and login rejects anonymous requests.
+
+### Job discovery slice (2026-10-16, uncommitted, not applied to `jobpilot`)
+
+- Migration `3b8e5f0c9a12` (parent `d4f7a19c2b86`) adds `job_listings` and
+  `job_discovery_runs` only; no foreign keys to candidate data. Downgrade drops
+  both tables and all discovered listings and run history.
+- Rehearsed on the new disposable database
+  `jobpilot_jobdisc_rehearsal_20261016_91c48d`, restored from
+  `jobpilot-pre-job-discovery-20261016-135946-686b42.dump` (SHA-256
+  `C1D887EA…627E77`): upgrade, `alembic check`, downgrade, re-upgrade and
+  `check` passed; 7 PostgreSQL tests passed. Private documents were copied to
+  `documents-pre-job-discovery-20261016-135946` and verified by hash.
+- Source facts and JobPilot conclusions are separate: listings store only what
+  a source states; eligibility is reported as `unknown` and will live in a
+  separate per-profile assessment table.
+- The Windows `uvicorn --reload` dev server was found stuck on its original
+  worker after a file change; restart it after code changes and verify.
+
+Known limitations recorded by the audit (not fixed):
+
+- The login limiter keys on client IP. Behind the Vite proxy every request
+  comes from `127.0.0.1`, so five failed attempts lock out all sign-ins for 15
+  minutes; the limiter is process-local.
+- Job descriptions cannot be edited or deleted; evidence descriptions and
+  excerpts can be changed through the API but not in the UI; documents cannot
+  be deleted.
+- ~~Generated CV exports appear in the document list and can be extracted and
+  used as evidence sources.~~ Fixed 2026-10-16: extraction and evidence
+  creation accept only candidate-uploaded source documents (HTTP 409
+  otherwise), and the UI lists source documents only (`?origin=source`).
+- CV generation includes every work experience and fails the draft if any
+  role lacks five substantive supported bullets.
+- The backup archive's restore has not been re-verified in this audit.
+- Uploads are bounded at 10 MB when stored, but the multipart body is spooled
+  before that check; there is no request-size limit at the server.
 
 ## Application and authentication behavior
 
@@ -42,11 +109,13 @@ loopback. This is not a public or shared multi-user deployment.
 
 ### Verified by automated tests/checks
 
-- Backend: `backend\.venv\Scripts\python.exe -m pytest -q` — **133 passed**.
-  Tests use isolated in-memory SQLite databases and temporary private storage.
-  The SQLite migration test verifies that the new auth schema is additive and
-  leaves a synthetic legacy profile unassigned.
-- Frontend: `npm test` from `frontend` — **19 passed**.
+- Backend: `backend\.venv\Scripts\python.exe -m pytest -q` — **141 passed**
+  after the 2026-10-15 audit (133 before it). Tests use isolated in-memory
+  SQLite databases and temporary private storage. The SQLite migration test
+  verifies that the new auth schema is additive and leaves a synthetic legacy
+  profile unassigned.
+- Frontend: `npm test` from `frontend` — **22 passed** after the audit (19
+  before it).
 - An earlier frontend run concurrent with the production build hit the
   default five-second timeout in two UI tests; the complete suite passed when
   run separately.
@@ -95,13 +164,15 @@ loopback. This is not a public or shared multi-user deployment.
 
 ## Database, migration, and backup status
 
-Repository migration history ends at `7ce347caa873` before the uncommitted
-auth revision `d4f7a19c2b86`. The `d4f7a19c2b86` migration declares
-`7ce347caa873` as its parent and is additive. The live configured database
-revision was **not queried in this Stage 8 pass**; it must not be inferred from
-the repository revision. No migration, bootstrap, password reset, or profile
-adoption command was run. No database or private document directory was
-modified.
+Repository migration history is linear and ends at the auth revision
+`d4f7a19c2b86`, whose parent is `7ce347caa873`; it is additive. A read-only
+query on 2026-10-15 showed the configured database at `7ce347caa873`
+(PostgreSQL 17.11), so the auth migration has **not** been applied. No
+migration, bootstrap, password reset, or profile adoption command was run. No
+database or private document directory was modified. Four earlier disposable
+databases named `jobpilot_auth_*_20261015*` exist on the same server; one may
+hold a partial restore. Do not reuse, overwrite, or delete them, and choose a
+new unique name for any future restore.
 
 Earlier project context reported Stage 1 backup/restore verification complete.
 That backup was not re-opened or re-restored during this handoff. Before any
@@ -180,7 +251,8 @@ connection URLs, candidate content, or private document contents.
 
 ## Current repository state
 
-At handoff, branch `main` is at `bd4080c27cd71ee18e2302573ae3a23ef1556246`.
-The authentication implementation and plan, plus the Stage 8 documentation,
-remain uncommitted and unstaged. Preserve existing modifications and untracked
-files; do not stage or commit without explicit instruction.
+Branch `main` is at `c2985cb5b65fa813e04670e92437ad055f9596f1`, which
+contains the authentication implementation and was pushed to the private
+GitHub repository. The 2026-10-15 audit corrections are uncommitted and
+unstaged. Preserve existing modifications and untracked files; do not stage or
+commit without explicit instruction.

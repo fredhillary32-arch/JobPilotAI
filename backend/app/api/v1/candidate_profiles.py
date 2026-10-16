@@ -142,6 +142,23 @@ def create_candidate_profile(
     return profile
 
 
+@router.get("", response_model=list[CandidateProfileRead])
+def list_candidate_profiles(
+    session: DatabaseSession,
+    authenticated: Annotated[
+        AuthenticatedSession,
+        Depends(get_authenticated_session),
+    ],
+) -> list[CandidateProfile]:
+    return list(
+        session.scalars(
+            select(CandidateProfile)
+            .where(CandidateProfile.user_id == authenticated.user.id)
+            .order_by(CandidateProfile.created_at, CandidateProfile.id)
+        )
+    )
+
+
 @router.get("/{profile_id}", response_model=CandidateProfileRead)
 def read_candidate_profile(
     profile_id: UUID,

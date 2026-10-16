@@ -1,12 +1,18 @@
 from datetime import date, timedelta
+import importlib
+import pkgutil
+import re
 import secrets
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+import app.api.v1 as api_v1_package
 from app.main import app
 from app.models import (
     CandidateCertification,
@@ -160,6 +166,7 @@ def test_anonymous_requests_are_rejected_for_each_resource_family(
         str(uuid4()) for _ in range(5)
     )
     requests = [
+        ("GET", API),
         ("GET", f"{API}/{profile_id}"),
         ("POST", API),
         ("GET", f"{API}/{profile_id}/experiences"),
@@ -224,6 +231,37 @@ def test_anonymous_requests_are_rejected_for_each_resource_family(
         assert response.status_code == 401, (method, path, response.text)
 
 
+PUBLIC_API_ROUTES = {
+    ("GET", "/api/v1/auth/pre-auth-csrf"),
+    ("POST", "/api/v1/auth/login"),
+}
+
+
+def test_every_registered_api_route_requires_a_session_except_documented_exceptions(
+    unauthenticated_client: TestClient,
+) -> None:
+    checked: list[tuple[str, str]] = []
+    for module_info in pkgutil.iter_modules(api_v1_package.__path__):
+        module = importlib.import_module(f"{api_v1_package.__name__}.{module_info.name}")
+        router = getattr(module, "router", None)
+        if not isinstance(router, APIRouter):
+            continue
+        for route in router.routes:
+            assert isinstance(route, APIRoute)
+            path = f"/api/v1{route.path}"
+            for method in sorted(route.methods):
+                if (method, path) in PUBLIC_API_ROUTES:
+                    continue
+                concrete_path = re.sub(r"\{[^}]+\}", str(uuid4()), path)
+                response = unauthenticated_client.request(method, concrete_path)
+                assert response.status_code == 401, (method, path, response.status_code)
+                checked.append((method, path))
+
+    assert ("GET", API) in checked
+    assert ("POST", "/api/v1/auth/logout") in checked
+    assert len(checked) >= 40
+
+
 def test_owned_profile_creation_derives_owner_from_session(
     api_client: TestClient,
     database: tuple[object, sessionmaker[Session]],
@@ -237,6 +275,24 @@ def test_owned_profile_creation_derives_owner_from_session(
         user = session.query(User).filter_by(email="test-owner@example.com").one()
         assert profile is not None
         assert profile.user_id == user.id
+
+
+def test_profile_list_contains_only_profiles_owned_by_the_session_user(
+    api_client: TestClient,
+    database: tuple[object, sessionmaker[Session]],
+) -> None:
+    _, factory = database
+    ids = _create_foreign_resources(factory)
+    created = api_client.post(API, json={"name": "Second owned profile"})
+    assert created.status_code == 201
+
+    response = api_client.get(API)
+
+    assert response.status_code == 200
+    listed_ids = {item["id"] for item in response.json()}
+    assert listed_ids == {str(ids["owner_profile"]), created.json()["id"]}
+    assert str(ids["foreign_profile"]) not in listed_ids
+    assert str(ids["legacy_profile"]) not in listed_ids
 
 
 def test_candidate_mutations_require_session_csrf_and_exact_origin(

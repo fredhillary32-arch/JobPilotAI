@@ -8,8 +8,9 @@ from app.api.v1.candidate_evidence import router as candidate_evidence_router
 from app.api.v1.candidate_profiles import router as candidate_profiles_router
 from app.api.v1.cv_exports import router as cv_exports_router
 from app.api.v1.cv_generation import router as cv_generation_router
-from app.db import check_database_connection
+from app.db import DatabaseSchemaNotCurrentError, check_database_connection
 from app.api.v1.document_extractions import router as document_extractions_router
+from app.api.v1.job_listings import router as job_listings_router
 
 app = FastAPI(
     title="JobPilot AI API",
@@ -27,6 +28,7 @@ app.include_router(document_extractions_router, prefix="/api/v1")
 app.include_router(candidate_evidence_router, prefix="/api/v1")
 app.include_router(cv_generation_router, prefix="/api/v1")
 app.include_router(cv_exports_router, prefix="/api/v1")
+app.include_router(job_listings_router, prefix="/api/v1")
 
 
 @app.get("/healthz", tags=["health"])
@@ -42,6 +44,11 @@ def readiness_check() -> dict[str, str]:
         raise HTTPException(
             status_code=503,
             detail="Database unavailable",
+        ) from None
+    except DatabaseSchemaNotCurrentError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database schema is not current",
         ) from None
 
     return {"status": "ok"}

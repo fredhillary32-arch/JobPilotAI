@@ -5,6 +5,10 @@ from typing import BinaryIO
 from uuid import UUID, uuid4
 
 MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
+# Only original candidate uploads may become extracted text or evidence;
+# system-generated exports must never be laundered back in as source material.
+SOURCE_DOCUMENT_KINDS = frozenset({"source_cv", "supporting_document"})
+SOURCE_DOCUMENT_PROVENANCES = frozenset({"candidate_uploaded"})
 CHUNK_SIZE_BYTES = 64 * 1024
 ALLOWED_DOCUMENT_TYPES = {
     ".pdf": "application/pdf",
@@ -139,6 +143,13 @@ def validate_document(
             raise DocumentValidationError("Text documents must not contain binary data")
 
     return suffix, expected_media_type
+
+
+def is_candidate_source_document(document_kind: str, provenance: str) -> bool:
+    return (
+        document_kind in SOURCE_DOCUMENT_KINDS
+        and provenance in SOURCE_DOCUMENT_PROVENANCES
+    )
 
 
 def get_document_storage() -> DocumentStorage:

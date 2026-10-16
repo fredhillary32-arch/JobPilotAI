@@ -1,6 +1,9 @@
 # JobPilot AI Personal-App Authentication Design
 
-**Status:** Approved design for review; authentication is not implemented.
+**Status:** Implemented in commit `c2985cb`. This document records the design
+as approved before implementation; statements below about missing
+authentication describe the pre-implementation state. See
+`docs/PROJECT_HANDOFF.md` for current verification status.
 **Decision:** Keep JobPilot AI local and personal, with one initial owner
 account. Do not expose it publicly.
 

@@ -208,6 +208,56 @@ export interface CvExport {
   created_at: string;
 }
 
+export interface JobListing {
+  id: string;
+  source_kind: string;
+  source_key: string;
+  source_listing_id: string;
+  source_url: string;
+  application_url: string;
+  employer_name: string;
+  title: string;
+  location_text: string | null;
+  stated_workplace_type: string | null;
+  stated_countries: string[];
+  posted_at: string | null;
+  source_updated_at: string | null;
+  application_deadline: string | null;
+  salary_min: string | null;
+  salary_max: string | null;
+  salary_currency: string | null;
+  salary_period: string | null;
+  source_status: "active" | "missing_from_source";
+  first_seen_at: string;
+  last_seen_at: string;
+  last_verified_at: string;
+  dedupe_key: string;
+  eligibility: { status: "unknown"; reason: string };
+}
+
+export interface JobListingPage {
+  items: JobListing[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface JobDiscoveryRun {
+  id: string;
+  source_kind: string;
+  source_key: string;
+  status: "running" | "succeeded" | "failed";
+  error_category: string | null;
+  started_at: string;
+  finished_at: string | null;
+  fetched_count: number;
+  created_count: number;
+  updated_count: number;
+  unchanged_count: number;
+  missing_count: number;
+  skipped_count: number;
+}
+
 export interface WorkspaceData {
   profile: CandidateProfile;
   experiences: WorkExperience[];

@@ -15,6 +15,8 @@ import type {
   ExportFormat,
   ExtractedText,
   JobDescription,
+  JobDiscoveryRun,
+  JobListingPage,
   Skill,
   SkillInput,
   WorkExperience,
@@ -64,11 +66,15 @@ function detailMessage(detail: unknown): string {
   return "The request could not be completed.";
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Restoring the session in another tab rotates the session CSRF token.
+const CSRF_VERIFICATION_FAILED = "Request verification failed.";
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   let response: Response;
   const method = (init?.method || "GET").toUpperCase();
+  const mutating = !["GET", "HEAD", "OPTIONS"].includes(method);
   const headers = new Headers(init?.headers);
-  if (!["GET", "HEAD", "OPTIONS"].includes(method) && sessionCsrfToken) {
+  if (mutating && sessionCsrfToken) {
     headers.set("X-CSRF-Token", sessionCsrfToken);
   }
   try {
@@ -91,6 +97,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       data = await response.json();
     } catch {
       data = null;
+    }
+    if (
+      response.status === 403 &&
+      mutating &&
+      !retried &&
+      path !== "/auth/login" &&
+      detailMessage(data) === CSRF_VERIFICATION_FAILED
+    ) {
+      await api.restoreSession();
+      return request<T>(path, init, true);
     }
     const error = new ApiError(response.status, detailMessage(data), data);
     if (response.status === 401) unauthorizedHandler?.();
@@ -153,6 +169,12 @@ export const api = {
       clearSessionCsrfToken();
     }
   },
+  listProfiles: () => request<CandidateProfile[]>("/candidate-profiles"),
+  listJobListings: (options: { postedWithinHours?: number } = {}) =>
+    request<JobListingPage>(
+      `/job-listings${options.postedWithinHours ? `?posted_within_hours=${options.postedWithinHours}` : ""}`,
+    ),
+  listDiscoveryRuns: () => request<JobDiscoveryRun[]>("/job-discovery/runs"),
   getProfile: (id: string) =>
     request<CandidateProfile>(profilePath(id)),
   createProfile: (payload: CandidateProfileInput) =>
@@ -214,8 +236,9 @@ export const api = {
       `${profilePath(profileId)}/certifications/${encodeURIComponent(recordId)}`,
       { method: "DELETE" },
     ),
-  listDocuments: (id: string) =>
-    request<CandidateDocument[]>(`${profilePath(id)}/documents`),
+  // Generated CV exports are listed through their draft's exports instead.
+  listSourceDocuments: (id: string) =>
+    request<CandidateDocument[]>(`${profilePath(id)}/documents?origin=source`),
   uploadDocument: (id: string, file: File) => {
     const body = new FormData();
     body.append("file", file);
@@ -353,7 +376,7 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
     api.listEducation(profileId),
     api.listSkills(profileId),
     api.listCertifications(profileId),
-    api.listDocuments(profileId),
+    api.listSourceDocuments(profileId),
     api.listEvidence(profileId),
     api.listJobs(profileId),
     api.listDrafts(profileId),
@@ -362,11 +385,6 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
   const extractions = Object.fromEntries(
     await Promise.all(
       documents
-        .filter(
-          (document) =>
-            document.document_kind === "source_cv" ||
-            document.document_kind === "supporting_document",
-        )
         .map(async (document) => {
           try {
             return [document.id, await api.getExtraction(profileId, document.id)] as const;

@@ -60,7 +60,8 @@ generation status, validation errors and gaps, and source references. A failed
 validation is persisted as a failed draft and returned as an HTTP 422 response
 with its draft ID and actionable validation details.
 
-The API is local-only until authentication and authorization are implemented:
+The API requires an authenticated session and profile ownership, and remains
+local-only:
 
 - `POST /api/v1/candidate-profiles/{profile_id}/job-descriptions`
 - `GET /api/v1/candidate-profiles/{profile_id}/job-descriptions`
@@ -107,10 +108,10 @@ to an external service.
 
 ## Security and limitations
 
-The application currently has no authentication or authorization. Profile IDs
-scope resource relationships but do not authenticate a caller. Do not expose
-the API publicly or use it as a shared multi-user service. Job descriptions
-and candidate content must be treated as untrusted input. Export downloads
-require the profile, job, draft, and export IDs to match, but these checks do
-not replace authentication. Private storage must be access-controlled and
+Every CV route requires an authenticated session, and the server checks that
+the signed-in user owns the profile. Profile IDs scope resource relationships
+but are not proof of ownership. Do not expose the API publicly or use it as a
+shared multi-user service. Job descriptions and candidate content must be
+treated as untrusted input. Export downloads also require the profile, job,
+draft, and export IDs to match. Private storage must be access-controlled and
 included in protected backups.

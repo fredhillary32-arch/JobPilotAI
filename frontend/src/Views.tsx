@@ -25,11 +25,12 @@ export type ViewName =
   | "Profile"
   | "Documents"
   | "Evidence review"
+  | "Job discovery"
   | "Job descriptions"
   | "Tailored CVs"
   | "Exports";
 
-type RunAction = (action: () => Promise<unknown>, success?: string) => Promise<boolean>;
+type RunAction = (action: () => Promise<unknown>, success?: string, pending?: string) => Promise<boolean>;
 
 const categories: EvidenceCategory[] = [
   "employment_responsibility",
@@ -148,7 +149,7 @@ export function DashboardView({
 
       <section className="panel privacy-note">
         <span className="privacy-icon" aria-hidden="true">i</span>
-        <p><strong>Local workspace</strong> — JobPilot AI does not yet have sign-in or authorization. Keep this application on your trusted local machine and do not expose its API publicly.</p>
+        <p><strong>Local workspace</strong> — Sign-in protects this workspace, but JobPilot AI is built for a single trusted machine. Keep the application bound to this computer and do not expose its API publicly.</p>
       </section>
     </div>
   );
@@ -204,7 +205,7 @@ export function ProfileView({
       remote_work_preference: form.remote_work_preference || null,
       target_job_categories: categoriesText.split(",").map((value) => value.trim()).filter(Boolean),
     };
-    runAction(() => onSave(payload), "Candidate profile saved.");
+    runAction(() => onSave(payload), "Candidate profile saved.", "Saving candidate profile…");
   }
 
   return (
@@ -221,7 +222,7 @@ export function ProfileView({
           <Field className="full-span" label="Professional summary"><textarea maxLength={5000} rows={5} value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></Field>
           <Field className="full-span" label="Target job categories" hint="Separate categories with commas."><input maxLength={3000} value={categoriesText} onChange={(event) => setCategoriesText(event.target.value)} /></Field>
         </div>
-        <div className="form-footer"><span className="muted">Changes update this profile only; saved CV drafts remain unchanged.</span><button className="button button-primary" type="submit">Save profile</button></div>
+        <div className="form-footer"><span className="muted">Changes update this profile only; saved CV drafts remain unchanged.</span><button className="button button-primary" disabled={busy} type="submit">Save profile</button></div>
       </form>
 
       <section className="panel">
@@ -288,6 +289,7 @@ export function DocumentsView({
   onExtract,
   onDownload,
   onGetText,
+  busy,
   runAction,
 }: {
   data: WorkspaceData;
@@ -295,6 +297,7 @@ export function DocumentsView({
   onExtract: (documentId: string) => Promise<unknown>;
   onDownload: (documentId: string, filename: string) => Promise<unknown>;
   onGetText: (documentId: string) => Promise<ExtractedText>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -308,7 +311,7 @@ export function DocumentsView({
       await onUpload(file);
       setFile(null);
       formElement.reset();
-    }, "Document uploaded as a new, separate source file.");
+    }, "Document uploaded as a new, separate source file.", "Uploading document…");
   }
 
   return (
@@ -316,7 +319,7 @@ export function DocumentsView({
       <PageHeading eyebrow="Source documents" title="Documents" description="Upload original documents, extract their text locally and keep every source file intact." />
       <form className="panel upload-panel" onSubmit={submit}>
         <div><h2>Upload a document</h2><p className="muted">PDF, DOCX or UTF-8 TXT · up to 10 MB. Existing files are never replaced.</p></div>
-        <div className="upload-controls"><input aria-label="Choose a document" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" /><button className="button button-primary" disabled={!file} type="submit">Upload new document</button></div>
+        <div className="upload-controls"><input aria-label="Choose a document" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" /><button className="button button-primary" disabled={!file || busy} type="submit">Upload new document</button></div>
       </form>
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Private source files</p><h2>Your documents</h2></div><span className="count-pill">{data.documents.length}</span></div>
@@ -327,7 +330,7 @@ export function DocumentsView({
               return <article className="document-row" key={document.id}>
                 <div className="file-mark" aria-hidden="true">{document.original_filename.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE"}</div>
                 <div className="document-details"><strong>{document.original_filename}</strong><span>{formatBytes(document.size_bytes)} · Uploaded {formatDate(document.created_at)}</span><div className="document-meta"><span className="status-pill">{document.document_kind === "source_cv" ? "Source CV" : "Supporting document"}</span><span className={`status-pill ${extraction?.status || "pending"}`}>{extraction ? extraction.status.replace("_", " ") : "Not extracted"}</span>{extraction?.error_category && <span className="muted">· {extraction.error_category.replaceAll("_", " ")}</span>}</div></div>
-                <div className="row-actions"><button className="button button-secondary" onClick={() => runAction(() => onDownload(document.id, document.original_filename), "Source document downloaded.")} type="button">Download</button><button className="button button-secondary" onClick={() => runAction(() => onExtract(document.id), "Text extraction completed.")} type="button">{extraction ? "Retry extraction" : "Extract text"}</button>{extraction?.status === "succeeded" && <button className="text-button" onClick={() => runAction(async () => setSelectedText(await onGetText(document.id)))} type="button">View extracted text</button>}</div>
+                <div className="row-actions"><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onDownload(document.id, document.original_filename), "Source document downloaded.", "Downloading document…")} type="button">Download</button><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onExtract(document.id), "Text extraction completed.", "Extracting text…")} type="button">{extraction ? "Retry extraction" : "Extract text"}</button>{extraction?.status === "succeeded" && <button className="text-button" disabled={busy} onClick={() => runAction(async () => setSelectedText(await onGetText(document.id)), undefined, "Loading extracted text…")} type="button">View extracted text</button>}</div>
               </article>;
             })}
           </div>
@@ -344,12 +347,14 @@ export function EvidenceView({
   onGetText,
   onCreate,
   onSetStatus,
+  busy,
   runAction,
 }: {
   data: WorkspaceData;
   onGetText: (documentId: string) => Promise<ExtractedText>;
   onCreate: (payload: { source_document_id: string; category: string; description: string; source_excerpt: string; source_section?: string }) => Promise<unknown>;
   onSetStatus: (id: string, status: EvidenceStatus) => Promise<unknown>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   const [sourceId, setSourceId] = useState("");
@@ -373,7 +378,7 @@ export function EvidenceView({
       setDescription("");
       setSourceSection("");
       setExcerpt("");
-    }, "Evidence saved as unreviewed. It has not been confirmed.");
+    }, "Evidence saved as unreviewed. It has not been confirmed.", "Saving evidence…");
   }
 
   const eligibleDocuments = data.documents.filter((document) => data.extractions[document.id]?.status === "succeeded");
@@ -392,9 +397,9 @@ export function EvidenceView({
             <p className="source-reference">Source: {source?.original_filename || "Source document unavailable"}{item.source_section ? ` · ${item.source_section}` : ""}</p>
             {item.source_excerpt && <blockquote>{item.source_excerpt}</blockquote>}
             <div className="evidence-actions">
-              {item.confirmation_status !== "candidate_confirmed" && <button className="button button-primary" onClick={() => runAction(() => onSetStatus(item.id, "candidate_confirmed"), "Evidence marked candidate-confirmed.")} type="button">Confirm evidence</button>}
-              {item.confirmation_status !== "rejected" && <button className="button button-danger-quiet" onClick={() => runAction(() => onSetStatus(item.id, "rejected"), "Evidence rejected and excluded from CV generation.")} type="button">Reject</button>}
-              {source && <button className="text-button" onClick={() => runAction(async () => setTextByDocument({ ...textByDocument, [source.id]: await onGetText(source.id) }))} type="button">{text ? "Refresh source text" : "Review source text"}</button>}
+              {item.confirmation_status !== "candidate_confirmed" && <button className="button button-primary" disabled={busy} onClick={() => runAction(() => onSetStatus(item.id, "candidate_confirmed"), "Evidence marked candidate-confirmed.", "Confirming evidence…")} type="button">Confirm evidence</button>}
+              {item.confirmation_status !== "rejected" && <button className="button button-danger-quiet" disabled={busy} onClick={() => runAction(() => onSetStatus(item.id, "rejected"), "Evidence rejected and excluded from CV generation.", "Rejecting evidence…")} type="button">Reject</button>}
+              {source && <button className="text-button" disabled={busy} onClick={() => runAction(async () => setTextByDocument({ ...textByDocument, [source.id]: await onGetText(source.id) }), undefined, "Loading source text…")} type="button">{text ? "Refresh source text" : "Review source text"}</button>}
             </div>
             {text && <details className="source-review"><summary>Extracted source text <span>Unverified content</span></summary><pre className="source-text">{text.text || "No readable text."}</pre></details>}
           </article>;
@@ -409,9 +414,9 @@ export function EvidenceView({
           <Field label="Short source section (optional)"><input maxLength={200} placeholder="For example, Platform Engineer" value={sourceSection} onChange={(event) => setSourceSection(event.target.value)} /></Field>
           <Field className="full-span" label="Evidence description" hint="Describe what this source says; do not add unverified details."><input maxLength={2000} required value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
           <Field className="full-span" label="Exact source excerpt"><textarea maxLength={5000} required rows={3} value={excerpt} onChange={(event) => setExcerpt(event.target.value)} /></Field>
-          {sourceId && <div className="full-span"><button className="text-button" onClick={() => runAction(async () => { const text = await onGetText(sourceId); setTextByDocument({ ...textByDocument, [sourceId]: text }); })} type="button">Load source text for reference</button>{textByDocument[sourceId] && <pre className="source-text source-text-compact">{textByDocument[sourceId].text}</pre>}</div>}
+          {sourceId && <div className="full-span"><button className="text-button" disabled={busy} onClick={() => runAction(async () => { const text = await onGetText(sourceId); setTextByDocument({ ...textByDocument, [sourceId]: text }); }, undefined, "Loading source text…")} type="button">Load source text for reference</button>{textByDocument[sourceId] && <pre className="source-text source-text-compact">{textByDocument[sourceId].text}</pre>}</div>}
         </div>}
-        <div className="form-footer"><span className="muted">Confirmation requires a separate review action.</span><button className="button button-primary" disabled={eligibleDocuments.length === 0} type="submit">Save unreviewed evidence</button></div>
+        <div className="form-footer"><span className="muted">Confirmation requires a separate review action.</span><button className="button button-primary" disabled={eligibleDocuments.length === 0 || busy} type="submit">Save unreviewed evidence</button></div>
       </form>
     </div>
   );
@@ -420,10 +425,12 @@ export function EvidenceView({
 export function JobsView({
   jobs,
   onCreate,
+  busy,
   runAction,
 }: {
   jobs: JobDescription[];
   onCreate: (payload: { job_title: string; company?: string; source_url?: string; description: string }) => Promise<unknown>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -438,7 +445,7 @@ export function JobsView({
     runAction(async () => {
       await onCreate({ job_title: jobTitle, description, ...(company && { company }), ...(sourceUrl && { source_url: sourceUrl }) });
       formElement.reset();
-    }, "Job description saved.");
+    }, "Job description saved.", "Saving job description…");
   }
 
   return <div className="view-stack">
@@ -451,7 +458,7 @@ export function JobsView({
         <Field className="full-span" label="Source URL"><input name="source_url" placeholder="https://" type="url" /></Field>
         <Field className="full-span" label="Full job description" hint="Include responsibilities and requirements so matching has enough context." required><textarea maxLength={50000} minLength={1} name="description" required rows={9} /></Field>
       </div>
-      <div className="form-footer"><span className="muted">Saved roles are retained independently from CV drafts.</span><button className="button button-primary" type="submit">Save job description</button></div>
+      <div className="form-footer"><span className="muted">Saved roles are retained independently from CV drafts.</span><button className="button button-primary" disabled={busy} type="submit">Save job description</button></div>
     </form>
     <section className="panel"><div className="section-title"><div><p className="eyebrow">Saved locally</p><h2>Saved roles</h2></div><span className="count-pill">{jobs.length}</span></div>
       {jobs.length === 0 ? <EmptyState title="No job descriptions saved" text="Paste a role above to start a job-specific CV workflow." /> : <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div className="job-card-title"><div><h3>{job.job_title}</h3><p>{job.company || "Company not provided"} · Added {formatDate(job.created_at)}</p></div>{job.source_url && <a className="text-button" href={job.source_url} rel="noreferrer" target="_blank">Open source <span aria-hidden="true">↗</span></a>}</div><details><summary>View full description</summary><p className="job-description">{job.description}</p></details></article>)}</div>}
@@ -464,18 +471,20 @@ export function DraftsView({
   onGenerate,
   onCreateExport,
   onDownloadExport,
+  busy,
   runAction,
 }: {
   data: WorkspaceData;
   onGenerate: (jobId: string) => Promise<unknown>;
   onCreateExport: (jobId: string, draftId: string, format: ExportFormat) => Promise<unknown>;
   onDownloadExport: (jobId: string, draftId: string, exportId: string, filename: string) => Promise<unknown>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   const [jobId, setJobId] = useState("");
   return <div className="view-stack">
     <PageHeading eyebrow="Evidence-backed applications" title="Tailored CVs" description="Generate and review a separate CV draft for a saved role. Unsupported requirements remain gaps, not candidate claims." />
-    <section className="panel generation-panel"><div><p className="eyebrow">Create a new draft</p><h2>Select a saved job</h2><p className="muted">Generation uses candidate profile data and candidate-confirmed evidence only.</p></div><div className="generation-controls"><select aria-label="Saved job description" value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">Choose a job description</option>{data.jobs.map((job) => <option key={job.id} value={job.id}>{job.job_title}{job.company ? ` · ${job.company}` : ""}</option>)}</select><button className="button button-primary" disabled={!jobId} onClick={() => runAction(() => onGenerate(jobId), "CV draft generated and saved.")} type="button">Generate CV draft</button></div>{data.jobs.length === 0 && <p className="inline-note">Save a job description before generating a draft.</p>}</section>
+    <section className="panel generation-panel"><div><p className="eyebrow">Create a new draft</p><h2>Select a saved job</h2><p className="muted">Generation uses candidate profile data and candidate-confirmed evidence only.</p></div><div className="generation-controls"><select aria-label="Saved job description" value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">Choose a job description</option>{data.jobs.map((job) => <option key={job.id} value={job.id}>{job.job_title}{job.company ? ` · ${job.company}` : ""}</option>)}</select><button className="button button-primary" disabled={!jobId || busy} onClick={() => runAction(() => onGenerate(jobId), "CV draft generated and saved.", "Generating CV draft…")} type="button">Generate CV draft</button></div>{data.jobs.length === 0 && <p className="inline-note">Save a job description before generating a draft.</p>}</section>
     <section className="panel"><div className="section-title"><div><p className="eyebrow">Saved versions</p><h2>CV drafts</h2></div><span className="count-pill">{data.drafts.length}</span></div>
       {data.drafts.length === 0 ? <EmptyState title="No CV drafts yet" text="Generated and failed attempts will appear here. Each attempt is saved separately." /> : <div className="draft-list">{data.drafts.map((draft) => {
         const job = data.jobs.find((item) => item.id === draft.job_description_id);
@@ -488,8 +497,8 @@ export function DraftsView({
             {draft.validation_results.gaps.length > 0 && <ResultList title="Evidence and skill gaps" items={draft.validation_results.gaps} kind="gap" />}
             {draft.validation_results.warnings.length > 0 && <ResultList title="Notes" items={draft.validation_results.warnings} kind="warning" />}
           </div>}
-          {draft.status === "generated" && job && <div className="draft-export-actions"><span className="muted">Export validated version:</span>{(["pdf", "docx"] as const).map((format) => <button className="button button-secondary" key={format} onClick={() => runAction(() => onCreateExport(job.id, draft.id, format), `${format.toUpperCase()} export created.`)} type="button">Export {format.toUpperCase()}</button>)}</div>}
-          {draftExports.length > 0 && job && <div className="draft-export-list"><strong>Exports</strong>{draftExports.map((item) => <div className="export-row" key={item.id}><span>{item.export_format.toUpperCase()} · {formatDate(item.created_at)}{item.page_count ? ` · ${item.page_count} page${item.page_count === 1 ? "" : "s"}` : ""}</span><button className="text-button" onClick={() => runAction(() => onDownloadExport(job.id, draft.id, item.id, item.filename), "Export downloaded.")} type="button">Download</button></div>)}</div>}
+          {draft.status === "generated" && job && <div className="draft-export-actions"><span className="muted">Export validated version:</span>{(["pdf", "docx"] as const).map((format) => <button className="button button-secondary" disabled={busy} key={format} onClick={() => runAction(() => onCreateExport(job.id, draft.id, format), `${format.toUpperCase()} export created.`, `Creating ${format.toUpperCase()} export…`)} type="button">Export {format.toUpperCase()}</button>)}</div>}
+          {draftExports.length > 0 && job && <div className="draft-export-list"><strong>Exports</strong>{draftExports.map((item) => <div className="export-row" key={item.id}><span>{item.export_format.toUpperCase()} · {formatDate(item.created_at)}{item.page_count ? ` · ${item.page_count} page${item.page_count === 1 ? "" : "s"}` : ""}</span><button className="text-button" disabled={busy} onClick={() => runAction(() => onDownloadExport(job.id, draft.id, item.id, item.filename), "Export downloaded.", "Downloading export…")} type="button">Download</button></div>)}</div>}
         </article>;
       })}</div>}
     </section>
@@ -499,10 +508,12 @@ export function DraftsView({
 export function ExportsView({
   data,
   onDownload,
+  busy,
   runAction,
 }: {
   data: WorkspaceData;
   onDownload: (jobId: string, draftId: string, exportId: string, filename: string) => Promise<unknown>;
+  busy: boolean;
   runAction: RunAction;
 }) {
   const drafts = new Map(data.drafts.map((draft) => [draft.id, draft]));
@@ -513,7 +524,7 @@ export function ExportsView({
       {data.exports.length === 0 ? <EmptyState title="No exports generated" text="Open a validated CV draft and create a PDF or DOCX export." /> : <div className="table-scroll"><table><thead><tr><th>File</th><th>Job</th><th>Created</th><th>Size</th><th>Pages</th><th><span className="sr-only">Download action</span></th></tr></thead><tbody>{data.exports.map((item) => {
         const draft = drafts.get(item.cv_draft_id);
         const job = draft ? jobs.get(draft.job_description_id) : undefined;
-        return <tr key={item.id}><td><span className="file-type">{item.export_format.toUpperCase()}</span>{item.filename}</td><td>{job?.job_title || "Job unavailable"}</td><td>{formatDate(item.created_at)}</td><td>{formatBytes(item.size_bytes)}</td><td>{item.page_count ?? "Word layout"}</td><td>{job && draft && <button className="button button-secondary" onClick={() => runAction(() => onDownload(job.id, draft.id, item.id, item.filename), "Export downloaded.")} type="button">Download</button>}</td></tr>;
+        return <tr key={item.id}><td><span className="file-type">{item.export_format.toUpperCase()}</span>{item.filename}</td><td>{job?.job_title || "Job unavailable"}</td><td>{formatDate(item.created_at)}</td><td>{formatBytes(item.size_bytes)}</td><td>{item.page_count ?? "Word layout"}</td><td>{job && draft && <button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onDownload(job.id, draft.id, item.id, item.filename), "Export downloaded.", "Downloading export…")} type="button">Download</button>}</td></tr>;
       })}</tbody></table></div>}
     </section>
     <p className="inline-note">DOCX page count varies by word processor and installed fonts. Export files are stored in the backend's private local document storage.</p>

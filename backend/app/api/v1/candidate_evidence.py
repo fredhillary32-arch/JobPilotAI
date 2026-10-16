@@ -13,6 +13,7 @@ from app.schemas.candidate_evidence import (
     CandidateEvidenceRead,
     CandidateEvidenceUpdate,
 )
+from app.services.documents import is_candidate_source_document
 from app.services.extraction import MAX_EXTRACTED_CHARACTERS
 
 router = APIRouter(
@@ -143,6 +144,11 @@ def create_candidate_evidence(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Source document not found for candidate profile",
+        )
+    if not is_candidate_source_document(document.document_kind, document.provenance):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Evidence can only come from candidate-uploaded source documents",
         )
     extraction = _get_usable_extraction(document.id, session)
     excerpt, start, end = _validate_and_locate_source(

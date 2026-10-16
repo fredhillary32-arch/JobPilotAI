@@ -9,6 +9,7 @@ import {
   setUnauthorizedHandler,
 } from "./api/client";
 import type {
+  CandidateProfile,
   CandidateProfileInput,
   CertificationInput,
   EducationInput,
@@ -29,12 +30,14 @@ import {
   ProfileView,
   type ViewName,
 } from "./Views";
+import { DiscoveryView } from "./DiscoveryView";
 
 const navigation: { name: ViewName; label: string; icon: string }[] = [
   { name: "Dashboard", label: "Overview", icon: "⌂" },
   { name: "Profile", label: "Candidate profile", icon: "◎" },
   { name: "Documents", label: "Documents", icon: "▤" },
   { name: "Evidence review", label: "Evidence review", icon: "✓" },
+  { name: "Job discovery", label: "Discovered jobs", icon: "⌕" },
   { name: "Job descriptions", label: "Job descriptions", icon: "▱" },
   { name: "Tailored CVs", label: "Tailored CVs", icon: "▧" },
   { name: "Exports", label: "Exports", icon: "⇩" },
@@ -53,6 +56,8 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewName>("Dashboard");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [pendingLabel, setPendingLabel] = useState("");
+  const [blockedAttempt, setBlockedAttempt] = useState(false);
   const actionLock = useRef(false);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -187,10 +192,20 @@ export default function App() {
     setNotice("");
   }
 
-  async function runAction(action: () => Promise<unknown>, success?: string): Promise<boolean> {
-    if (actionLock.current) return false;
+  // Actions run one at a time because each one reloads the shared workspace;
+  // a second action is refused with visible feedback rather than dropped.
+  async function runAction(
+    action: () => Promise<unknown>,
+    success?: string,
+    pending = "Saving your changes…",
+  ): Promise<boolean> {
+    if (actionLock.current) {
+      setBlockedAttempt(true);
+      return false;
+    }
     actionLock.current = true;
     setBusy(true);
+    setPendingLabel(pending);
     setActionError("");
     setNotice("");
     try {
@@ -213,6 +228,8 @@ export default function App() {
     } finally {
       actionLock.current = false;
       setBusy(false);
+      setPendingLabel("");
+      setBlockedAttempt(false);
     }
   }
 
@@ -305,15 +322,17 @@ export default function App() {
           runAction={runAction}
         />;
       case "Documents":
-        return <DocumentsView data={data} onUpload={uploadDocument} onExtract={extractDocument} onDownload={downloadDocument} onGetText={(id) => api.getExtractedText(profileId, id)} runAction={runAction} />;
+        return <DocumentsView data={data} onUpload={uploadDocument} onExtract={extractDocument} onDownload={downloadDocument} onGetText={(id) => api.getExtractedText(profileId, id)} busy={busy} runAction={runAction} />;
       case "Evidence review":
-        return <EvidenceView data={data} onGetText={(id) => api.getExtractedText(profileId, id)} onCreate={createEvidence} onSetStatus={setEvidenceStatus} runAction={runAction} />;
+        return <EvidenceView data={data} onGetText={(id) => api.getExtractedText(profileId, id)} onCreate={createEvidence} onSetStatus={setEvidenceStatus} busy={busy} runAction={runAction} />;
+      case "Job discovery":
+        return <DiscoveryView />;
       case "Job descriptions":
-        return <JobsView jobs={data.jobs} onCreate={createJob} runAction={runAction} />;
+        return <JobsView jobs={data.jobs} onCreate={createJob} busy={busy} runAction={runAction} />;
       case "Tailored CVs":
-        return <DraftsView data={data} onGenerate={generateDraft} onCreateExport={createExport} onDownloadExport={downloadExport} runAction={runAction} />;
+        return <DraftsView data={data} onGenerate={generateDraft} onCreateExport={createExport} onDownloadExport={downloadExport} busy={busy} runAction={runAction} />;
       case "Exports":
-        return <ExportsView data={data} onDownload={downloadExport} runAction={runAction} />;
+        return <ExportsView data={data} onDownload={downloadExport} busy={busy} runAction={runAction} />;
       default:
         return <DashboardView data={data} navigate={setActiveView} />;
     }
@@ -339,9 +358,12 @@ export default function App() {
       <main className="main-content">
         <header className="topbar"><div><span className="topbar-label">Candidate workspace</span><span className="topbar-divider">/</span><span>{activeView}</span></div><span className="local-chip"><span /> Stored locally</span></header>
         <div aria-busy={busy} className="content-area">
-          {actionError && <div className="feedback feedback-error" role="alert"><strong>Could not complete that action</strong><span>{actionError}</span><button aria-label="Dismiss error" onClick={() => setActionError("")}>×</button></div>}
-          {notice && <div className="feedback feedback-success" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice("")}>×</button></div>}
-          {busy && <div className="inline-loading" role="status"><span className="spinner small" /> Saving your changes…</div>}
+          {(actionError || notice || busy) && <div className="feedback-region" data-testid="feedback-region">
+            {actionError && <div className="feedback feedback-error" role="alert"><strong>Could not complete that action</strong><span>{actionError}</span><button aria-label="Dismiss error" onClick={() => setActionError("")}>×</button></div>}
+            {notice && <div className="feedback feedback-success" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice("")}>×</button></div>}
+            {busy && <div className="inline-loading" role="status"><span className="spinner small" /> {pendingLabel}</div>}
+            {busy && blockedAttempt && <div className="feedback feedback-wait" role="status"><span>Please wait for the current action to finish before starting another.</span></div>}
+          </div>}
           {view}
         </div>
         <footer className="app-footer">JobPilot AI <span>·</span> Evidence first, applications with care <span className="footer-security">Your workspace is protected by your secure session.</span></footer>
@@ -409,6 +431,24 @@ function ProfileStart({ onSelect, error, onLogout }: {
   const [existingId, setExistingId] = useState("");
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState("");
+  const [ownedProfiles, setOwnedProfiles] = useState<CandidateProfile[] | null>(null);
+  const [listError, setListError] = useState("");
+
+  useEffect(() => {
+    let current = true;
+    api.listProfiles()
+      .then((profiles) => {
+        if (current) setOwnedProfiles(profiles);
+      })
+      .catch((caught: unknown) => {
+        if (!current) return;
+        setOwnedProfiles([]);
+        setListError(errorMessage(caught));
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -434,6 +474,12 @@ function ProfileStart({ onSelect, error, onLogout }: {
       <h1>{error ? "Connect a candidate profile" : "Start with your profile"}</h1>
       <p className="setup-intro">{error ? `The saved profile could not be loaded: ${error}` : "Create a candidate profile or open one you own to begin."}</p>
       {formError && <p className="feedback-error setup-error" role="alert">{formError}</p>}
+      {listError && <p className="feedback-error setup-error" role="alert">Your profiles could not be listed: {listError}</p>}
+      {ownedProfiles === null ? <p className="muted">Loading your profiles…</p> : ownedProfiles.length > 0 && <section aria-label="Your candidate profiles" className="owned-profiles">
+        <h2>Your profiles</h2>
+        <ul>{ownedProfiles.map((owned) => <li key={owned.id}><button className="button button-secondary button-wide" onClick={() => onSelect(owned.id)} type="button">Open {owned.name}</button></li>)}</ul>
+        <div className="setup-divider"><span>or create another profile</span></div>
+      </section>}
       <form onSubmit={create} className="setup-form">
         <Field label="Your name" required><input autoComplete="name" maxLength={200} required value={name} onChange={(event) => setName(event.target.value)} /></Field>
         <Field label="Email (optional)"><input autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>

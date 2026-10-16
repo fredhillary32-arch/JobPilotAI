@@ -16,6 +16,7 @@ from app.models.cv_generation import (
     TailoredCvDraft,
     TailoredCvExport,
 )
+from app.models.job_listing import JobDiscoveryRun, JobListing
 from app.models.user import (
     AuthSession,
     PreAuthChallenge,
@@ -31,6 +32,8 @@ __all__ = [
     "CandidateJobDescription",
     "TailoredCvDraft",
     "TailoredCvExport",
+    "JobDiscoveryRun",
+    "JobListing",
     "AuthSession",
     "PreAuthChallenge",
     "ProfileOwnershipAdoption",

@@ -21,6 +21,8 @@ from app.services.auth import (
     reset_password,
     validate_password,
 )
+from app.services.job_discovery import JobSource, run_discovery
+from app.services.job_sources.greenhouse import GreenhouseBoardSource
 
 
 class HiddenPasswordPromptUnavailable(RuntimeError):
@@ -58,6 +60,16 @@ def _build_parser() -> argparse.ArgumentParser:
         type=UUID,
         help="Candidate profile UUID to adopt; repeat for each profile.",
     )
+    greenhouse = commands.add_parser(
+        "discover-greenhouse",
+        help="Fetch one employer's public Greenhouse job board and store its listings.",
+    )
+    greenhouse.add_argument("--board", required=True, help="Greenhouse board token.")
+    greenhouse.add_argument(
+        "--employer",
+        required=True,
+        help="Employer name for this board (the list endpoint does not state it).",
+    )
     return parser
 
 
@@ -92,6 +104,7 @@ def main(
     password_prompt: Callable[[str], str] | None = None,
     output: Callable[[str], object] | None = None,
     session_factory: sessionmaker[Session] | None = None,
+    source_factory: Callable[[str, str], JobSource] | None = None,
 ) -> int:
     args = _build_parser().parse_args(argv)
     input_fn = input if input_fn is None else input_fn
@@ -100,6 +113,8 @@ def main(
 
     if args.command == "reset-password":
         return _reset_password(input_fn, password_prompt, output, session_factory)
+    if args.command == "discover-greenhouse":
+        return _discover_greenhouse(output, session_factory, args.board, args.employer, source_factory)
     if args.command == "adopt-profiles":
         return _adopt_profiles(
             input_fn,
@@ -239,6 +254,36 @@ def _adopt_profiles(
         return 1
 
     output(f"Adopted {adopted_count} explicitly selected profile(s).")
+    return 0
+
+
+def _discover_greenhouse(
+    output: Callable[[str], object],
+    session_factory: sessionmaker[Session] | None,
+    board: str,
+    employer: str,
+    source_factory: Callable[[str, str], JobSource] | None,
+) -> int:
+    try:
+        source = (source_factory or GreenhouseBoardSource)(board, employer)
+    except ValueError as error:
+        output(str(error))
+        return 2
+    factory = get_session_factory() if session_factory is None else session_factory
+    try:
+        with factory() as session:
+            run = run_discovery(session, source)
+    except SQLAlchemyError:
+        output("Discovery failed because of a database operation error.")
+        return 1
+    if run.status != "succeeded":
+        output(f"Discovery failed for greenhouse:{source.key} ({run.error_category}); stored listings were not changed.")
+        return 1
+    output(
+        f"Discovery succeeded for greenhouse:{source.key}: fetched {run.fetched_count}, "
+        f"new {run.created_count}, updated {run.updated_count}, unchanged {run.unchanged_count}, "
+        f"no longer listed {run.missing_count}, skipped {run.skipped_count}."
+    )
     return 0
 
 

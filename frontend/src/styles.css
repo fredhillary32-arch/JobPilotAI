@@ -322,9 +322,20 @@ td:first-child { color: #3d4d45; font-weight: 600; }
 .feedback { position: relative; display: flex; align-items: flex-start; gap: 9px; margin-bottom: 14px; padding: 11px 40px 11px 13px; border: 1px solid; border-radius: 8px; font-size: 11px; line-height: 1.5; }
 .feedback-error { border-color: #f1d3d0; background: #fff6f5; color: #944944; }
 .feedback-success { border-color: #cfe6d8; background: #f1f8f4; color: #286c4e; }
+.listing-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 16px; margin: 10px 0; font-size: 11px; }
+.listing-facts dt { color: var(--muted); }
+.listing-facts dd { margin: 2px 0 0; }
+.eligibility-unknown { background: #fff8e9; color: #806a3c; }
+.discovery-window { min-width: 220px; }
+.run-list { margin: 8px 0 0; padding-left: 18px; }
+.feedback-wait { border-color: #ecdcb6; background: #fff8e9; color: #806a3c; padding-right: 13px; }
 .feedback strong { flex: 0 0 auto; }
 .feedback button { position: absolute; top: 7px; right: 9px; border: 0; background: transparent; color: inherit; font-size: 18px; }
 .inline-loading { display: flex; align-items: center; gap: 8px; color: #63746c; font-size: 11px; }
+/* Pinned to the viewport so messages stay visible wherever the action was taken. */
+.feedback-region { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: grid; gap: 8px; width: min(420px, calc(100% - 32px)); }
+.feedback-region .feedback { margin-bottom: 0; box-shadow: 0 10px 30px rgb(29 71 53 / 14%); }
+.feedback-region .inline-loading { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: 0 10px 30px rgb(29 71 53 / 10%); }
 .spinner { width: 22px; height: 22px; border: 2px solid #d8e8df; border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite; }
 .spinner.small { width: 15px; height: 15px; }
 .loading-screen { display: grid; min-height: 100vh; align-content: center; justify-items: center; gap: 12px; color: #6e7d75; font-size: 12px; }
@@ -336,6 +347,8 @@ td:first-child { color: #3d4d45; font-weight: 600; }
 .setup-card h1 { margin: 0 0 7px; font-size: 25px; letter-spacing: -.8px; }
 .setup-intro { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .setup-form, .existing-profile-form { display: grid; gap: 13px; }
+.owned-profiles h2 { margin: 0 0 10px; font-size: 14px; }
+.owned-profiles ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .button-wide { width: 100%; }
 .setup-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 14px; color: #9aa49f; font-size: 10px; }
 .setup-divider::before, .setup-divider::after { height: 1px; flex: 1; background: #e8edea; content: ""; }

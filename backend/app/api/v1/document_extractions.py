@@ -9,7 +9,11 @@ from app.api.v1.dependencies import require_authenticated_resource_access
 from app.db import DatabaseSession
 from app.models import CandidateDocument, DocumentExtraction
 from app.schemas.document_extraction import DocumentExtractionRead, ExtractedTextRead
-from app.services.documents import DocumentStorage, get_document_storage
+from app.services.documents import (
+    DocumentStorage,
+    get_document_storage,
+    is_candidate_source_document,
+)
 from app.services.extraction import ExtractionFailure, extract_document_text
 
 router = APIRouter(
@@ -67,6 +71,11 @@ def run_document_extraction(
 ) -> DocumentExtraction:
     get_profile_or_404(session, profile_id)
     document = _get_document_or_404(profile_id, document_id, session)
+    if not is_candidate_source_document(document.document_kind, document.provenance):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only candidate-uploaded source documents can be extracted",
+        )
     try:
         outcome = extract_document_text(document, storage)
     except ExtractionFailure as exc:

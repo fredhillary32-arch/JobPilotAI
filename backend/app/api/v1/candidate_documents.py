@@ -1,11 +1,11 @@
 from http import HTTPStatus
 from pathlib import PurePath, PureWindowsPath
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import and_, not_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.candidate_profiles import get_profile_or_404
@@ -14,6 +14,8 @@ from app.db import DatabaseSession
 from app.models import CandidateDocument
 from app.schemas.candidate_document import CandidateDocumentRead, DocumentKind
 from app.services.documents import (
+    SOURCE_DOCUMENT_KINDS,
+    SOURCE_DOCUMENT_PROVENANCES,
     DocumentStorage,
     DocumentStorageError,
     DocumentTooLargeError,
@@ -111,15 +113,21 @@ def upload_candidate_document(
 def list_candidate_documents(
     profile_id: UUID,
     session: DatabaseSession,
+    origin: Annotated[Literal["all", "source", "generated"], Query()] = "all",
 ) -> list[CandidateDocument]:
     get_profile_or_404(session, profile_id)
-    return list(
-        session.scalars(
-            select(CandidateDocument)
-            .where(CandidateDocument.candidate_profile_id == profile_id)
-            .order_by(CandidateDocument.created_at.desc())
-        )
+    query = select(CandidateDocument).where(
+        CandidateDocument.candidate_profile_id == profile_id
     )
+    is_source = and_(
+        CandidateDocument.document_kind.in_(SOURCE_DOCUMENT_KINDS),
+        CandidateDocument.provenance.in_(SOURCE_DOCUMENT_PROVENANCES),
+    )
+    if origin == "source":
+        query = query.where(is_source)
+    elif origin == "generated":
+        query = query.where(not_(is_source))
+    return list(session.scalars(query.order_by(CandidateDocument.created_at.desc())))
 
 
 @router.get(

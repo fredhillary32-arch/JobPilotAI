@@ -79,6 +79,7 @@ let exports: Array<Record<string, unknown>>;
 let profileRecords: Record<string, Array<Record<string, unknown>>>;
 let requests: Array<{
   path: string;
+  search: string;
   method: string;
   body: string | null;
   headers: Headers;
@@ -90,6 +91,11 @@ let failProfileRecordSave = false;
 let sessionValid = true;
 let failSessionRestore = false;
 let expireNextPrivateRequest = false;
+let sessionCsrf = "session-csrf-test";
+let jobListings: Array<Record<string, unknown>> = [];
+let discoveryRuns: Array<Record<string, unknown>> = [];
+let failJobListings = false;
+let enforceSessionCsrf = false;
 
 function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -119,6 +125,7 @@ function responseFor(url: string, init: RequestInit = {}): Response {
   const body = typeof init.body === "string" ? init.body : null;
   requests.push({
     path,
+    search: new URL(url, "http://localhost").search,
     method,
     body: body || (init.body instanceof FormData ? "[form-data]" : null),
     headers: new Headers(init.headers),
@@ -129,7 +136,7 @@ function responseFor(url: string, init: RequestInit = {}): Response {
   if (path === "/api/v1/auth/session" && method === "GET") {
     if (failSessionRestore) return jsonResponse({ detail: "Session service unavailable." }, 503);
     if (!sessionValid) return jsonResponse({ detail: "Not authenticated." }, 401);
-    return jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: "session-csrf-test" });
+    return jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: sessionCsrf });
   }
   if (path === "/api/v1/auth/pre-auth-csrf" && method === "GET") {
     return jsonResponse({ csrf_token: "pre-auth-csrf-test" });
@@ -149,6 +156,17 @@ function responseFor(url: string, init: RequestInit = {}): Response {
     expireNextPrivateRequest = false;
     sessionValid = false;
     return jsonResponse({ detail: "Not authenticated." }, 401);
+  }
+  if (
+    enforceSessionCsrf &&
+    method !== "GET" &&
+    path.startsWith("/api/v1/candidate-profiles") &&
+    new Headers(init.headers).get("X-CSRF-Token") !== sessionCsrf
+  ) {
+    return jsonResponse({ detail: "Request verification failed." }, 403);
+  }
+  if (path === "/api/v1/candidate-profiles" && method === "GET") {
+    return jsonResponse([currentProfile]);
   }
 
   if (path === `/api/v1/candidate-profiles/${profileId}`) {
@@ -190,6 +208,8 @@ function responseFor(url: string, init: RequestInit = {}): Response {
   }
   if (path === `/api/v1/candidate-profiles/${profileId}/documents`) {
     if (method === "POST") return jsonResponse(document, 201);
+    const origin = new URL(url, "http://localhost").searchParams.get("origin") || "all";
+    if (origin === "source") return jsonResponse([document]);
     return jsonResponse([
       document,
       ...exports.map((entry) => ({
@@ -262,6 +282,13 @@ function responseFor(url: string, init: RequestInit = {}): Response {
       headers: { "Content-Type": "text/plain" },
     });
   }
+  if (path === "/api/v1/job-listings" && method === "GET") {
+    if (failJobListings) return jsonResponse({ detail: "Job listings are unavailable." }, 503);
+    const within = new URL(url, "http://localhost").searchParams.get("posted_within_hours");
+    const items = within ? jobListings.filter((item) => item.posted_at) : jobListings;
+    return jsonResponse({ items, total: items.length, limit: 50, offset: 0 });
+  }
+  if (path === "/api/v1/job-discovery/runs" && method === "GET") return jsonResponse(discoveryRuns);
   return jsonResponse({ detail: `Unexpected test request: ${method} ${path}` }, 404);
 }
 
@@ -324,6 +351,11 @@ describe("JobPilot frontend", () => {
     sessionValid = true;
     failSessionRestore = false;
     expireNextPrivateRequest = false;
+    sessionCsrf = "session-csrf-test";
+    enforceSessionCsrf = false;
+    jobListings = [];
+    discoveryRuns = [];
+    failJobListings = false;
     window.localStorage.clear();
     vi.stubGlobal("fetch", vi.fn((url: string | URL, init?: RequestInit) =>
       Promise.resolve(responseFor(String(url), init)),
@@ -380,6 +412,59 @@ describe("JobPilot frontend", () => {
     expect(requests[loginIndex].mode).toBe("same-origin");
     expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
     expect(window.localStorage.getItem("jobpilot.profileId")).toBe(profileId);
+  });
+
+  it("lists owned profiles after sign-in so a profile can be reopened without its ID", async () => {
+    sessionValid = false;
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(await screen.findByRole("textbox", { name: "Email address" }), "owner@example.test");
+    await user.type(screen.getByLabelText(/Password/), "correct horse");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    const owned = within(await screen.findByRole("region", { name: "Your candidate profiles" }));
+    await user.click(owned.getByRole("button", { name: "Open Taylor Candidate" }));
+
+    expect(await screen.findByRole("heading", { name: "Good to see you, Taylor" })).toBeInTheDocument();
+    expect(requests.some((request) => request.path === "/api/v1/candidate-profiles" && request.method === "GET")).toBe(true);
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBe(profileId);
+  });
+
+  it("recovers once from a CSRF token rotated by another tab and retries the mutation", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    enforceSessionCsrf = true;
+    sessionCsrf = "session-csrf-rotated";
+
+    await user.click(screen.getByRole("button", { name: "Candidate profile" }));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(await screen.findByText("Candidate profile saved.")).toBeInTheDocument();
+    const patches = requests.filter((request) => request.method === "PATCH" && request.path.endsWith(`/candidate-profiles/${profileId}`));
+    expect(patches.map((request) => request.headers.get("X-CSRF-Token"))).toEqual(["session-csrf-test", "session-csrf-rotated"]);
+  });
+
+  it("does not retry a mutation more than once when CSRF verification keeps failing", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    enforceSessionCsrf = true;
+    sessionCsrf = "session-csrf-rotated-elsewhere";
+    vi.mocked(fetch).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const response = responseFor(String(url), init);
+      if (new URL(String(url), "http://localhost").pathname === "/api/v1/auth/session") {
+        sessionCsrf = `session-csrf-${requests.length}`;
+      }
+      return Promise.resolve(response);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Candidate profile" }));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(await screen.findByText("Request verification failed.")).toBeInTheDocument();
+    const patches = requests.filter((request) => request.method === "PATCH");
+    expect(patches).toHaveLength(2);
   });
 
   it("shows a generic error for failed login and does not load private data", async () => {
@@ -486,7 +571,8 @@ describe("JobPilot frontend", () => {
     await user.type(screen.getByRole("textbox", { name: /Professional headline/ }), "Systems Engineer");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
 
-    expect(await screen.findByText("Candidate profile saved.")).toBeInTheDocument();
+    const saved = await screen.findByText("Candidate profile saved.");
+    expect(within(screen.getByTestId("feedback-region")).getByText("Candidate profile saved.")).toBe(saved);
     expect(requests.some((request) =>
       request.method === "PATCH" &&
       request.path === `/api/v1/candidate-profiles/${profileId}` &&
@@ -683,6 +769,23 @@ describe("JobPilot frontend", () => {
     )).toBe(true);
   });
 
+  it("keeps generated CV exports out of the source documents list", async () => {
+    exports = [makeExport()];
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    await user.click(screen.getByRole("button", { name: "Documents" }));
+
+    expect(await screen.findByText("candidate-cv.txt")).toBeInTheDocument();
+    expect(screen.queryByText("jobpilot-cv-export-123.pdf")).not.toBeInTheDocument();
+    const documentRequests = requests.filter((request) => request.path.endsWith(`/candidate-profiles/${profileId}/documents`));
+    expect(documentRequests.length).toBeGreaterThan(0);
+    expect(documentRequests.every((request) => request.search === "?origin=source")).toBe(true);
+    expect(requests.some((request) => request.path.endsWith("/documents/document-export-123/extraction"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Exports" }));
+    expect(await screen.findByText("jobpilot-cv-export-123.pdf")).toBeInTheDocument();
+  });
+
   it("creates and downloads exports only from a generated draft", async () => {
     const user = userEvent.setup();
     const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
@@ -710,5 +813,208 @@ describe("JobPilot frontend", () => {
     createObjectUrl.mockRestore();
     revokeObjectUrl.mockRestore();
     anchorClick.mockRestore();
+  });
+
+  describe("actions in progress", () => {
+    // Holds the first request matching `predicate` open until release() is called.
+    function holdRequest(predicate: (path: string, method: string) => boolean) {
+      let release: (response?: Response) => void = () => {};
+      let held = false;
+      vi.mocked(fetch).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        const method = init?.method || "GET";
+        if (!held && predicate(path, method)) {
+          held = true;
+          // Record the request when it is sent, not when it is answered.
+          requests.push({ path, search: "", method, body: null, headers: new Headers(init?.headers), credentials: init?.credentials, mode: init?.mode });
+          return new Promise<Response>((resolve) => {
+            release = (response) => {
+              if (response) return resolve(response);
+              const real = responseFor(String(url), init);
+              requests.pop(); // responseFor logged this request a second time
+              resolve(real);
+            };
+          });
+        }
+        return Promise.resolve(responseFor(String(url), init));
+      });
+      return { release: (response?: Response) => release(response) };
+    }
+
+    const isExportCreate = (path: string, method: string) => method === "POST" && path.endsWith(`/cv-drafts/${draftId}/exports`);
+
+    async function openDrafts(user: ReturnType<typeof userEvent.setup>) {
+      mountApp();
+      await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+      await user.click(screen.getByRole("button", { name: "Tailored CVs" }));
+      await screen.findByRole("heading", { name: "CV drafts" });
+    }
+
+    it("disables export buttons and ignores repeated clicks while an export is running", async () => {
+      const user = userEvent.setup();
+      await openDrafts(user);
+      const held = holdRequest(isExportCreate);
+
+      await user.click(screen.getByRole("button", { name: "Export PDF" }));
+      expect(await screen.findByText("Creating PDF export…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Export PDF" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Export DOCX" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
+      fireEvent.click(screen.getByRole("button", { name: "Export DOCX" }));
+      expect(requests.filter((request) => isExportCreate(request.path, request.method))).toHaveLength(1);
+
+      held.release();
+      expect(await screen.findByText("PDF export created.")).toBeInTheDocument();
+      expect(screen.queryByText("Creating PDF export…")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Export DOCX" })).toBeEnabled();
+      expect(requests.filter((request) => isExportCreate(request.path, request.method))).toHaveLength(1);
+    });
+
+    it("restores buttons and shows the error when the running action fails", async () => {
+      const user = userEvent.setup();
+      await openDrafts(user);
+      const held = holdRequest(isExportCreate);
+
+      await user.click(screen.getByRole("button", { name: "Export DOCX" }));
+      expect(await screen.findByText("Creating DOCX export…")).toBeInTheDocument();
+      held.release(jsonResponse({ detail: "CV export storage is unavailable" }, 503));
+
+      expect(await screen.findByText("CV export storage is unavailable")).toBeInTheDocument();
+      expect(screen.queryByText("Creating DOCX export…")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Export DOCX" })).toBeEnabled();
+      await user.click(screen.getByRole("button", { name: "Export PDF" }));
+      expect(await screen.findByText("PDF export created.")).toBeInTheDocument();
+    });
+
+    it("restores buttons when a download fails at the network level", async () => {
+      const user = userEvent.setup();
+      mountApp();
+      await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+      await user.click(screen.getByRole("button", { name: "Documents" }));
+      await screen.findByText("candidate-cv.txt");
+      vi.mocked(fetch).mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        if (path.endsWith(`/documents/${documentId}/download`)) return Promise.reject(new TypeError("Failed to fetch"));
+        return Promise.resolve(responseFor(String(url), init));
+      });
+
+      await user.click(screen.getByRole("button", { name: "Download" }));
+
+      expect(await screen.findByText("The download could not reach the local API.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+      expect(screen.queryByText("Downloading document…")).not.toBeInTheDocument();
+    });
+
+    it("tells the user to wait instead of silently dropping a second action", async () => {
+      const user = userEvent.setup();
+      mountApp();
+      await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+      await user.click(screen.getByRole("button", { name: "Job descriptions" }));
+      await user.type(screen.getByRole("textbox", { name: /Job title/ }), "Support Engineer");
+      await user.type(screen.getByRole("textbox", { name: /Full job description/ }), "Help customers.");
+      const isJobCreate = (path: string, method: string) => method === "POST" && path.endsWith("/job-descriptions");
+      const held = holdRequest(isJobCreate);
+
+      await user.click(screen.getByRole("button", { name: "Save job description" }));
+      expect(await screen.findByText("Saving job description…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save job description" })).toBeDisabled();
+      fireEvent.submit(screen.getByRole("button", { name: "Save job description" }).closest("form")!);
+
+      expect(await screen.findByText("Please wait for the current action to finish before starting another.")).toBeInTheDocument();
+      expect(requests.filter((request) => isJobCreate(request.path, request.method))).toHaveLength(1);
+
+      held.release();
+      expect(await screen.findByText("Job description saved.")).toBeInTheDocument();
+      expect(screen.queryByText("Please wait for the current action to finish before starting another.")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save job description" })).toBeEnabled();
+    });
+
+    it("keeps navigation available while an action is running", async () => {
+      const user = userEvent.setup();
+      await openDrafts(user);
+      const held = holdRequest(isExportCreate);
+
+      await user.click(screen.getByRole("button", { name: "Export PDF" }));
+      await screen.findByText("Creating PDF export…");
+      await user.click(screen.getByRole("button", { name: "Documents" }));
+      expect(await screen.findByRole("heading", { name: "Documents" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Download" })).toBeDisabled();
+
+      held.release();
+      expect(await screen.findByText("PDF export created.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+    });
+  });
+  describe("job discovery", () => {
+    function makeListing(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "listing-1", source_kind: "greenhouse", source_key: "syntheticco", source_listing_id: "101",
+        source_url: "https://boards-api.greenhouse.io/v1/boards/syntheticco/jobs?content=true",
+        application_url: "https://boards.greenhouse.io/syntheticco/jobs/101",
+        employer_name: "Synthetic Co", title: "Technical Support Specialist", location_text: "Remote - EMEA",
+        stated_workplace_type: null, stated_countries: [], posted_at: null, source_updated_at: null,
+        application_deadline: null, salary_min: null, salary_max: null, salary_currency: null, salary_period: null,
+        source_status: "active", first_seen_at: now, last_seen_at: now, last_verified_at: now, dedupe_key: "a".repeat(64),
+        eligibility: { status: "unknown", reason: "Eligibility for Kenya-based applicants has not been assessed." },
+        ...overrides,
+      };
+    }
+
+    async function openDiscovery(user: ReturnType<typeof userEvent.setup>) {
+      mountApp();
+      await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+      await user.click(screen.getByRole("button", { name: "Discovered jobs" }));
+    }
+
+    it("shows stored listings as source facts with eligibility unknown", async () => {
+      jobListings = [makeListing(), makeListing({ id: "listing-2", title: "IT Support L2", application_url: "javascript:alert(1)", posted_at: "2026-10-16T06:00:00Z" })];
+      const user = userEvent.setup();
+      await openDiscovery(user);
+
+      expect(await screen.findByText("Technical Support Specialist")).toBeInTheDocument();
+      expect(screen.getAllByText("Eligibility unknown")).toHaveLength(2);
+      expect(screen.getByText("Posting date not provided by source")).toBeInTheDocument();
+      const link = screen.getByRole("link", { name: /Open original listing/ });
+      expect(link).toHaveAttribute("href", "https://boards.greenhouse.io/syntheticco/jobs/101");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      expect(screen.getAllByRole("link", { name: /Open original listing/ })).toHaveLength(1);
+      expect(screen.getByText("The source did not provide a secure listing link.")).toBeInTheDocument();
+    });
+
+    it("requests only source-dated listings for the 24-hour window", async () => {
+      jobListings = [makeListing(), makeListing({ id: "listing-2", title: "Dated role", posted_at: "2026-10-16T06:00:00Z" })];
+      const user = userEvent.setup();
+      await openDiscovery(user);
+      await screen.findByText("Technical Support Specialist");
+
+      await user.selectOptions(screen.getByRole("combobox", { name: "Show" }), "24");
+
+      expect(await screen.findByText("Dated role")).toBeInTheDocument();
+      expect(screen.queryByText("Technical Support Specialist")).not.toBeInTheDocument();
+      expect(requests.some((request) => request.path === "/api/v1/job-listings" && request.search === "?posted_within_hours=24")).toBe(true);
+    });
+
+    it("shows an honest empty state and reports failed source runs", async () => {
+      discoveryRuns = [{
+        id: "run-1", source_kind: "greenhouse", source_key: "syntheticco", status: "failed", error_category: "rate_limited",
+        started_at: now, finished_at: now, fetched_count: 0, created_count: 0, updated_count: 0, unchanged_count: 0, missing_count: 0, skipped_count: 0,
+      }];
+      const user = userEvent.setup();
+      await openDiscovery(user);
+
+      expect(await screen.findByText("No discovered jobs")).toBeInTheDocument();
+      expect(screen.getByText(/greenhouse:syntheticco failed \(rate limited\)/)).toBeInTheDocument();
+    });
+
+    it("surfaces API errors instead of an empty list", async () => {
+      failJobListings = true;
+      const user = userEvent.setup();
+      await openDiscovery(user);
+
+      expect(await screen.findByText("Job listings are unavailable.")).toBeInTheDocument();
+      expect(screen.queryByText("No discovered jobs")).not.toBeInTheDocument();
+    });
   });
 });
