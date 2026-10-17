@@ -14,11 +14,13 @@ import re
 import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from app.services.job_discovery import SourceFetchError, SourceListing
 
-API_HOST = "https://boards-api.greenhouse.io"
+API_HOSTNAME = "boards-api.greenhouse.io"
+API_HOST = f"https://{API_HOSTNAME}"
 BOARD_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,99}\Z")
 REQUEST_TIMEOUT_SECONDS = 20
 MAX_RESPONSE_BYTES = 20 * 1024 * 1024
@@ -88,6 +90,22 @@ def _parse_date(value: Any) -> date | None:
     return parsed.date() if parsed else None
 
 
+class GreenhouseOnlyRedirectHandler(HTTPRedirectHandler):
+    """Follow a redirect only to HTTPS on the official Greenhouse API host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlsplit(newurl)
+        if target.scheme != "https" or target.hostname != API_HOSTNAME:
+            if fp is not None:
+                fp.close()
+            raise SourceFetchError("invalid_response")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Module-level so tests can substitute the network call.
+urlopen = build_opener(GreenhouseOnlyRedirectHandler).open
+
+
 def default_fetch(url: str) -> bytes:
     request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
     try:
@@ -142,6 +160,8 @@ class GreenhouseBoardSource:
         return SourceListing(
             source_listing_id=str(job.get("id") or "").strip(),
             source_url=self.api_url,
+            # Greenhouse's posting page also hosts its application form.
+            listing_url=str(job.get("absolute_url") or "").strip() or None,
             application_url=str(job.get("absolute_url") or "").strip(),
             employer_name=company_name.strip() if isinstance(company_name, str) and company_name.strip() else self.employer_name,
             title=str(job.get("title") or ""),

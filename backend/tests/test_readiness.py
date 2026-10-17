@@ -29,11 +29,11 @@ def _sqlite_engine_with_revisions(*revisions: str):
 
 
 def test_expected_schema_head_is_the_single_repository_head() -> None:
-    assert get_expected_schema_heads() == frozenset({"3b8e5f0c9a12"})
+    assert get_expected_schema_heads() == frozenset({"e7c4a9d2b6f3"})
 
 
 def test_database_check_accepts_current_schema_revision(monkeypatch) -> None:
-    engine = _sqlite_engine_with_revisions("3b8e5f0c9a12")
+    engine = _sqlite_engine_with_revisions("e7c4a9d2b6f3")
     monkeypatch.setattr(db_module, "get_engine", lambda: engine)
 
     db_module.check_database_connection()

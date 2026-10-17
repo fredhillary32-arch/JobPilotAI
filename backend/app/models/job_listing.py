@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    ForeignKey,
     Index,
     JSON,
     Numeric,
@@ -86,7 +87,11 @@ class JobListing(Base):
     source_key: Mapped[str] = mapped_column(String(200), nullable=False)
     source_listing_id: Mapped[str] = mapped_column(String(200), nullable=False)
     source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # Public vacancy page, when the source states one; distinct from the application form.
+    listing_url: Mapped[str | None] = mapped_column(String(2048))
     application_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # Registry category of the source at discovery time (direct_employer, staffing_agency, ...).
+    source_category: Mapped[str | None] = mapped_column(String(32))
     # Facts exactly as stated by the source (untrusted text).
     employer_name: Mapped[str] = mapped_column(String(200), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -112,6 +117,8 @@ class JobListing(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Set when a listing the source had dropped is seen again; it is not a new posting date.
+    relisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -160,3 +167,43 @@ class JobDiscoveryRun(Base):
     unchanged_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     missing_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     skipped_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    # Why entries were skipped, e.g. {"no usable https application URL": 2}; never silent.
+    skip_reasons: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+
+
+LINK_KINDS = ("listing", "application")
+LINK_OUTCOMES = (
+    "reachable", "expired", "auth_required", "redirected_off_domain", "unverified_domain",
+    "insecure", "rate_limited", "broken", "unreachable",
+)
+
+
+class JobListingLinkCheck(Base):
+    """One rate-limited check of a listing's vacancy page or application link.
+
+    "reachable" means the page answered on an allowed host; it does not prove the
+    vacancy is open or that an application form works.
+    """
+
+    __tablename__ = "job_listing_link_checks"
+    __table_args__ = (
+        CheckConstraint("url_kind IN ('listing', 'application')", name="ck_link_check_kind"),
+        CheckConstraint(
+            "outcome IN ('reachable', 'expired', 'auth_required', 'redirected_off_domain', "
+            "'unverified_domain', 'insecure', 'rate_limited', 'broken', 'unreachable')",
+            name="ck_link_check_outcome",
+        ),
+        Index("ix_link_checks_listing_kind_checked", "job_listing_id", "url_kind", "checked_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    job_listing_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("job_listings.id", ondelete="CASCADE"), nullable=False
+    )
+    url_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    final_url: Mapped[str | None] = mapped_column(String(2048))
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    http_status: Mapped[int | None] = mapped_column()
+    detail: Mapped[str | None] = mapped_column(String(500))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

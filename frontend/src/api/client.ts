@@ -1,5 +1,16 @@
 import type {
+  AtsReport,
+  CvDraftReview,
+  EvidenceSuggestions,
+  JobPipeline,
+  KenyaState,
+  PreparedApplication,
+  ApplicationStatus,
   CandidateDocument,
+  CandidateEligibilityDetails,
+  CandidateEligibilityInput,
+  Country,
+  JobFit,
   CandidateEvidence,
   CandidateProfile,
   CandidateProfileInput,
@@ -11,12 +22,25 @@ import type {
   DocumentExtraction,
   Education,
   EducationInput,
+  EligibilityAssessmentInput,
+  EligibilityEvidence,
+  EligibilityStatus,
+  JobSourceHealth,
+  SourceCategory,
   EvidenceStatus,
   ExportFormat,
   ExtractedText,
+  JobApplication,
+  JobApplicationDetails,
   JobDescription,
   JobDiscoveryRun,
+  DiscoveryRefresh,
+  RoleGroup,
+  SkillConfirmation,
+  SkillConfirmationInput,
+  JobListingDetail,
   JobListingPage,
+  ListingEligibility,
   Skill,
   SkillInput,
   WorkExperience,
@@ -38,6 +62,38 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 
 export function clearSessionCsrfToken(): void {
   sessionCsrfToken = null;
+}
+
+export interface JobListingFilters {
+  postedWithinHours?: number;
+  eligibility?: EligibilityStatus;
+  eligibleScope?: "kenya_named" | "africa" | "emea" | "worldwide";
+  // Strict state: only listings in exactly this state are returned.
+  kenya?: KenyaState;
+  // Comma-separated keywords; any one may match the title or employer.
+  search?: string;
+  supportRolesOnly?: boolean;
+  roleGroups?: RoleGroup[];
+  excludeRoleGroups?: RoleGroup[];
+  sourceCategory?: SourceCategory;
+  verifiedLinksOnly?: boolean;
+  source?: string;
+  workplace?: "remote" | "hybrid" | "onsite";
+  sort?: "posted" | "discovered" | "relevance";
+  offset?: number;
+}
+
+export interface PipelineFilters {
+  postedWithinHours?: number;
+  supportRolesOnly?: boolean;
+  roleGroups?: RoleGroup[];
+  search?: string;
+  source?: string;
+  workplace?: "remote" | "hybrid" | "onsite";
+}
+
+function roleGroups(options: { supportRolesOnly?: boolean; roleGroups?: RoleGroup[] }): RoleGroup[] {
+  return [...new Set([...(options.supportRolesOnly ? ["support_it" as const] : []), ...(options.roleGroups ?? [])])];
 }
 
 export class ApiError extends Error {
@@ -68,9 +124,13 @@ function detailMessage(detail: unknown): string {
 
 // Restoring the session in another tab rotates the session CSRF token.
 const CSRF_VERIFICATION_FAILED = "Request verification failed.";
+// No request may leave the page waiting forever: every call ends in a result or an error.
+export const REQUEST_TIMEOUT_MS = 90_000;
 
 async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   let response: Response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const method = (init?.method || "GET").toUpperCase();
   const mutating = !["GET", "HEAD", "OPTIONS"].includes(method);
   const headers = new Headers(init?.headers);
@@ -83,13 +143,23 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
       headers,
       credentials: "same-origin",
       mode: "same-origin",
+      signal: controller.signal,
     });
   } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(
+        0,
+        `The JobPilot API did not respond within ${REQUEST_TIMEOUT_MS / 1000} seconds. Nothing you entered was lost; try again.`,
+        null,
+      );
+    }
     throw new ApiError(
       0,
       `Cannot connect to JobPilot API at ${API_BASE_URL}. Check that the local backend is running.`,
       null,
     );
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) {
     let data: unknown = null;
@@ -170,9 +240,53 @@ export const api = {
     }
   },
   listProfiles: () => request<CandidateProfile[]>("/candidate-profiles"),
-  listJobListings: (options: { postedWithinHours?: number } = {}) =>
-    request<JobListingPage>(
-      `/job-listings${options.postedWithinHours ? `?posted_within_hours=${options.postedWithinHours}` : ""}`,
+  listJobListings: (options: JobListingFilters = {}) => {
+    const query = new URLSearchParams();
+    if (options.postedWithinHours) query.set("posted_within_hours", String(options.postedWithinHours));
+    if (options.eligibility) query.set("eligibility", options.eligibility);
+    if (options.kenya) query.set("kenya", options.kenya);
+    if (options.eligibleScope) query.set("eligible_scope", options.eligibleScope);
+    if (options.search?.trim()) query.set("q", options.search.trim());
+    for (const group of roleGroups(options)) query.append("role_family", group);
+    if (options.sourceCategory) query.set("source_category", options.sourceCategory);
+    if (options.verifiedLinksOnly) query.set("verified_application_link", "true");
+    for (const group of options.excludeRoleGroups ?? []) query.append("exclude_role_family", group);
+    if (options.source) query.set("source", options.source);
+    if (options.workplace) query.set("workplace", options.workplace);
+    if (options.sort && options.sort !== "posted") query.set("sort", options.sort);
+    if (options.offset) query.set("offset", String(options.offset));
+    const search = query.toString();
+    return request<JobListingPage>(`/job-listings${search ? `?${search}` : ""}`);
+  },
+  // Starts a background pass over the registry sources; returns at once.
+  startDiscoveryRefresh: (sources: string[] = []) =>
+    request<DiscoveryRefresh>("/job-discovery/refresh", json("POST", { sources })),
+  getDiscoveryRefresh: () => request<DiscoveryRefresh>("/job-discovery/refresh"),
+  listJobSources: () => request<JobSourceHealth[]>("/job-sources"),
+  getJobPipeline: (profileId: string, options: PipelineFilters = {}) => {
+    const query = new URLSearchParams();
+    if (options.postedWithinHours) query.set("posted_within_hours", String(options.postedWithinHours));
+    for (const group of roleGroups(options)) query.append("role_family", group);
+    if (options.search?.trim()) query.set("q", options.search.trim());
+    if (options.source) query.set("source", options.source);
+    if (options.workplace) query.set("workplace", options.workplace);
+    const search = query.toString();
+    return request<JobPipeline>(`${profilePath(profileId)}/job-pipeline${search ? `?${search}` : ""}`);
+  },
+  // Prepares (never submits) an application for an eligible listing.
+  prepareApplication: (profileId: string, listingId: string) =>
+    request<PreparedApplication>(
+      `${profilePath(profileId)}/job-listings/${encodeURIComponent(listingId)}/prepare-application`,
+      { method: "POST" },
+    ),
+  getEligibilityEvidence: (listingId: string) =>
+    request<EligibilityEvidence>(`/job-listings/${encodeURIComponent(listingId)}/eligibility-evidence`),
+  getJobListing: (listingId: string) =>
+    request<JobListingDetail>(`/job-listings/${encodeURIComponent(listingId)}`),
+  recordEligibility: (listingId: string, payload: EligibilityAssessmentInput) =>
+    request<ListingEligibility>(
+      `/job-listings/${encodeURIComponent(listingId)}/eligibility-assessments`,
+      json("POST", payload),
     ),
   listDiscoveryRuns: () => request<JobDiscoveryRun[]>("/job-discovery/runs"),
   getProfile: (id: string) =>
@@ -288,6 +402,18 @@ export const api = {
       `${profilePath(profileId)}/evidence/${encodeURIComponent(evidenceId)}`,
       json("PATCH", { confirmation_status }),
     ),
+  // Local, rule-based suggestions from the document's current extracted text.
+  suggestEvidence: (profileId: string, documentId: string) =>
+    request<EvidenceSuggestions>(
+      `${profilePath(profileId)}/documents/${encodeURIComponent(documentId)}/evidence-suggestions`,
+      { method: "POST" },
+    ),
+  // Re-locate an existing excerpt in the current text; the review decision is unchanged.
+  relinkEvidence: (profileId: string, evidenceId: string, sourceExcerpt: string) =>
+    request<CandidateEvidence>(
+      `${profilePath(profileId)}/evidence/${encodeURIComponent(evidenceId)}`,
+      json("PATCH", { source_excerpt: sourceExcerpt, source_start: null, source_end: null }),
+    ),
   listJobs: (id: string) =>
     request<JobDescription[]>(`${profilePath(id)}/job-descriptions`),
   createJob: (
@@ -303,11 +429,77 @@ export const api = {
       `${profilePath(profileId)}/job-descriptions`,
       json("POST", payload),
     ),
+  listCountries: () => request<Country[]>("/countries"),
+  getEligibilityDetails: (id: string) =>
+    request<CandidateEligibilityDetails>(`${profilePath(id)}/eligibility-details`),
+  confirmEligibilityDetails: (id: string, payload: CandidateEligibilityInput) =>
+    request<CandidateEligibilityDetails>(`${profilePath(id)}/eligibility-details`, json("PUT", payload)),
+  getJobFit: (profileId: string, jobId: string) =>
+    request<JobFit>(`${profilePath(profileId)}/job-descriptions/${encodeURIComponent(jobId)}/fit`),
+  listApplications: (id: string) =>
+    request<JobApplication[]>(`${profilePath(id)}/applications`),
+  createApplication: (
+    profileId: string,
+    payload: { job_description_id: string; status: ApplicationStatus; applied_on?: string } & JobApplicationDetails,
+  ) =>
+    request<JobApplication>(`${profilePath(profileId)}/applications`, json("POST", payload)),
+  updateApplication: (profileId: string, applicationId: string, payload: JobApplicationDetails) =>
+    request<JobApplication>(
+      `${profilePath(profileId)}/applications/${encodeURIComponent(applicationId)}`,
+      json("PATCH", payload),
+    ),
+  changeApplicationStatus: (
+    profileId: string,
+    applicationId: string,
+    payload: { status: ApplicationStatus; applied_on?: string; note?: string },
+  ) =>
+    request<JobApplication>(
+      `${profilePath(profileId)}/applications/${encodeURIComponent(applicationId)}/status`,
+      json("POST", payload),
+    ),
+  // The server copies the stored listing text; the browser never relays it.
+  importJobFromListing: (profileId: string, listingId: string) =>
+    request<JobDescription>(
+      `${profilePath(profileId)}/job-descriptions/from-listing/${encodeURIComponent(listingId)}`,
+      { method: "POST" },
+    ),
   listDrafts: (id: string) =>
     request<CvDraft[]>(`${profilePath(id)}/cv-drafts`),
-  generateDraft: (profileId: string, jobId: string) =>
+  generateDraft: (profileId: string, jobId: string, options?: { sourceDocumentId?: string }) =>
     request<CvDraft>(
       `${profilePath(profileId)}/job-descriptions/${encodeURIComponent(jobId)}/cv-drafts`,
+      json("POST", { writer: "reviewed", ...(options?.sourceDocumentId && { source_document_id: options.sourceDocumentId }) }),
+    ),
+  // Read-only analysis computed locally by the backend; nothing is sent elsewhere.
+  getAtsAnalysis: (profileId: string, jobId: string, sourceDocumentId?: string) =>
+    request<AtsReport>(
+      `${profilePath(profileId)}/job-descriptions/${encodeURIComponent(jobId)}/ats-analysis${sourceDocumentId ? `?source_document_id=${encodeURIComponent(sourceDocumentId)}` : ""}`,
+    ),
+  getDraftReview: (profileId: string, draftId: string) =>
+    request<CvDraftReview>(`${profilePath(profileId)}/cv-drafts/${encodeURIComponent(draftId)}/review`),
+  reviseDraft: (profileId: string, draftId: string, edits: { key: string; text: string }[]) =>
+    request<CvDraft>(`${profilePath(profileId)}/cv-drafts/${encodeURIComponent(draftId)}/revisions`, json("POST", { edits })),
+  approveDraft: (profileId: string, draftId: string, attestUnconfirmedStatements: boolean, acknowledgeIncomplete = false) =>
+    request<CvDraft>(
+      `${profilePath(profileId)}/cv-drafts/${encodeURIComponent(draftId)}/approval`,
+      json("POST", { attest_unconfirmed_statements: attestUnconfirmedStatements, ...(acknowledgeIncomplete && { acknowledge_incomplete: true }) }),
+    ),
+  listConfirmations: (profileId: string) =>
+    request<SkillConfirmation[]>(`${profilePath(profileId)}/skill-confirmations`),
+  createConfirmation: (profileId: string, payload: SkillConfirmationInput) =>
+    request<SkillConfirmation>(`${profilePath(profileId)}/skill-confirmations`, json("POST", payload)),
+  updateConfirmation: (profileId: string, confirmationId: string, payload: SkillConfirmationInput) =>
+    request<SkillConfirmation>(
+      `${profilePath(profileId)}/skill-confirmations/${encodeURIComponent(confirmationId)}`,
+      json("PUT", {
+        skill_name: payload.skill_name, category: payload.category, response: payload.response,
+        proficiency_level: payload.proficiency_level ?? null, work_experience_id: payload.work_experience_id ?? null,
+        project_name: payload.project_name ?? null, example: payload.example ?? null,
+      }),
+    ),
+  withdrawConfirmation: (profileId: string, confirmationId: string) =>
+    request<SkillConfirmation>(
+      `${profilePath(profileId)}/skill-confirmations/${encodeURIComponent(confirmationId)}/withdraw`,
       { method: "POST" },
     ),
   listExports: (profileId: string, jobId: string, draftId: string) =>
@@ -370,6 +562,9 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
     evidence,
     jobs,
     drafts,
+    applications,
+    eligibilityDetails,
+    confirmations,
   ] = await Promise.all([
     api.getProfile(profileId),
     api.listExperiences(profileId),
@@ -380,6 +575,9 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
     api.listEvidence(profileId),
     api.listJobs(profileId),
     api.listDrafts(profileId),
+    api.listApplications(profileId),
+    api.getEligibilityDetails(profileId),
+    api.listConfirmations(profileId),
   ]);
 
   const extractions = Object.fromEntries(
@@ -422,6 +620,9 @@ export async function loadWorkspace(profileId: string): Promise<WorkspaceData> {
     jobs,
     drafts,
     exports,
+    applications,
+    eligibilityDetails,
+    confirmations,
   };
 }
 

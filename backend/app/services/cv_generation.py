@@ -25,7 +25,8 @@ from app.services.cv_provider import (
     DeterministicCVContentProvider,
     extract_required_skills,
 )
-from app.services.cv_validation import validate_cv_content
+from app.services.cv_validation import completeness_issues, validate_cv_content
+from app.services.evidence_integrity import current_only
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,8 @@ def render_cv(content: CVStructuredContent) -> str:
     lines = [content.candidate_name]
     if content.professional_heading:
         lines.append(content.professional_heading)
+    if content.contact_details:
+        lines.append(content.contact_details)
     lines.append("")
 
     for section in content.sections:
@@ -144,13 +147,14 @@ def generate_cv_draft(
             .order_by(CandidateEducation.start_date.desc())
         )
     )
-    evidence = list(
+    # Evidence whose excerpt no longer matches the current extraction is left out.
+    evidence = current_only(session, list(
         session.scalars(
             select(CandidateEvidence)
             .where(CandidateEvidence.candidate_profile_id == profile_id)
             .order_by(CandidateEvidence.created_at)
         )
-    )
+    ))
 
     content = (provider or DeterministicCVContentProvider()).generate(
         profile,
@@ -170,11 +174,14 @@ def generate_cv_draft(
     else:
         warnings = []
     gaps = _required_skill_gaps(job, profile, skills, experiences, evidence)
+    issues = completeness_issues(content)
     results = CVValidationResults(
         is_valid=not errors,
         errors=errors,
         gaps=gaps,
         warnings=warnings,
+        completeness="incomplete" if issues else "complete",
+        issues=issues,
     )
     if errors:
         return CVGenerationOutcome(
@@ -185,7 +192,8 @@ def generate_cv_draft(
             source_references=references,
         )
     return CVGenerationOutcome(
-        status="generated",
+        # Sound but incomplete content is saved for the candidate to review, never padded.
+        status="needs_review" if issues else "generated",
         generated_content=rendered,
         structured_content=content,
         validation_results=results,

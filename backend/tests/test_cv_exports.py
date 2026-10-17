@@ -12,6 +12,7 @@ from app.models import (
     CandidateProfile,
     CandidateSkill,
     CandidateWorkExperience,
+    TailoredCvDraft,
 )
 
 ACHIEVEMENTS = [
@@ -226,15 +227,31 @@ def test_failed_drafts_cannot_be_exported(
         json={"job_title": "Engineer", "description": JOB_DESCRIPTION},
     )
     job_id = job_response.json()["id"]
-    failed = api_client.post(
+    # Two supported bullets: the draft is saved as incomplete, never padded.
+    incomplete = api_client.post(
         f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
         f"{job_id}/cv-drafts"
     )
-    assert failed.status_code == 422
-    draft_id = failed.json()["detail"]["draft_id"]
-
+    assert incomplete.status_code == 201 and incomplete.json()["status"] == "needs_review"
     export = api_client.post(
-        export_path(profile_id, job_id, draft_id),
+        export_path(profile_id, job_id, incomplete.json()["id"]),
+        json={"export_format": "pdf"},
+    )
+    assert export.status_code == 409
+    assert "incomplete" in export.json()["detail"]
+
+    # A draft that failed validation has no content and is never exported.
+    with database[1]() as session:
+        failed = TailoredCvDraft(
+            candidate_profile_id=UUID(profile_id), job_description_id=UUID(job_id), status="failed",
+            generated_content=None, structured_content=None, source_references=[],
+            validation_results={"is_valid": False, "errors": ["synthetic integrity error"], "gaps": [], "warnings": []},
+        )
+        session.add(failed)
+        session.commit()
+        failed_id = str(failed.id)
+    export = api_client.post(
+        export_path(profile_id, job_id, failed_id),
         json={"export_format": "pdf"},
     )
     assert export.status_code == 409

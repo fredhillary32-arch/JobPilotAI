@@ -129,19 +129,21 @@ def _authenticate_and_create_session(
     login_request: LoginRequest,
     client_ip: str,
 ) -> tuple[User, str, str, int]:
+    try:
+        normalized_email = normalize_login_email(login_request.email)
+    except ValueError:
+        normalized_email = None
+    # Malformed emails share one bucket per client so they cannot bypass the limit.
+    account_key = normalized_email or ""
+
     with login_failure_limiter.lock:
-        if login_failure_limiter.is_limited(client_ip):
+        if login_failure_limiter.is_limited(client_ip, account_key):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many login attempts. Try again later.",
             )
 
         try:
-            try:
-                normalized_email = normalize_login_email(login_request.email)
-            except ValueError:
-                normalized_email = None
-
             with session.begin():
                 dialect_name = session.get_bind().dialect.name
                 if dialect_name == "sqlite":
@@ -159,7 +161,7 @@ def _authenticate_and_create_session(
                         .with_for_update()
                     )
                 if not verify_login_password(login_request.password, user):
-                    login_failure_limiter.record_failure(client_ip)
+                    login_failure_limiter.record_failure(client_ip, account_key)
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail=GENERIC_LOGIN_ERROR,
@@ -189,6 +191,8 @@ def _authenticate_and_create_session(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Authentication service unavailable.",
             ) from None
+        # Reached only after the session was committed successfully.
+        login_failure_limiter.clear_account(client_ip, account_key)
 
     return user, raw_session_token, csrf_token, max_age
 

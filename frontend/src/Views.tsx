@@ -1,16 +1,19 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 
 import type {
+  CandidateEvidence,
   CandidateProfileInput,
   Certification,
   CertificationInput,
+  CvDraft,
   Education,
   EducationInput,
   EvidenceCategory,
   EvidenceStatus,
   ExportFormat,
   ExtractedText,
+  JobApplication,
   JobDescription,
   RemoteWorkPreference,
   Skill,
@@ -19,18 +22,28 @@ import type {
   WorkExperience,
   WorkExperienceInput,
 } from "./api/types";
+import { APPLICATION_STATUS_LABELS, FINISHED_STATUSES, localToday } from "./applicationStatus";
+import { AtsPanel } from "./AtsPanel";
+import { DraftReview } from "./DraftReview";
+import { JobFitPanel } from "./JobFitPanel";
 
 export type ViewName =
   | "Dashboard"
   | "Profile"
   | "Documents"
   | "Evidence review"
+  | "Job pipeline"
   | "Job discovery"
   | "Job descriptions"
   | "Tailored CVs"
+  | "Applications"
   | "Exports";
 
-type RunAction = (action: () => Promise<unknown>, success?: string, pending?: string) => Promise<boolean>;
+type RunAction = (
+  action: () => Promise<unknown>,
+  success?: string | ((result: unknown) => string),
+  pending?: string,
+) => Promise<boolean>;
 
 const categories: EvidenceCategory[] = [
   "employment_responsibility",
@@ -67,12 +80,26 @@ export function DashboardView({
     data.profile.remote_work_preference,
   ].filter(Boolean).length;
   const completion = Math.round((completeFields / 7) * 100);
+  const activeApplications = data.applications.filter((application) => !FINISHED_STATUSES.includes(application.status));
   const metrics = [
     ["Documents", data.documents.length, "Documents"],
     ["Saved roles", data.jobs.length, "Job descriptions"],
     ["CV drafts", data.drafts.length, "Tailored CVs"],
-    ["Exports", data.exports.length, "Exports"],
+    ["Active applications", activeApplications.length, "Applications"],
   ] as const;
+  // Deadlines and follow-ups due within two weeks, including overdue ones.
+  const today = localToday();
+  const horizon = new Date(`${today}T00:00:00Z`);
+  horizon.setUTCDate(horizon.getUTCDate() + 14);
+  const horizonDay = horizon.toISOString().slice(0, 10);
+  const upcoming = activeApplications
+    .flatMap((application) => [
+      application.deadline_on ? { application, kind: "Deadline", day: application.deadline_on } : null,
+      application.follow_up_on ? { application, kind: "Follow up", day: application.follow_up_on } : null,
+    ])
+    .filter((item): item is { application: JobApplication; kind: string; day: string } => item !== null && item.day <= horizonDay)
+    .sort((left, right) => left.day.localeCompare(right.day))
+    .slice(0, 5);
 
   return (
     <div className="view-stack">
@@ -144,6 +171,32 @@ export function DashboardView({
             <EmptyState title="No CV drafts yet" text="Save a job description and generate a draft when you are ready." />
           )}
           <button className="text-button" onClick={() => navigate("Tailored CVs")}>Open tailored CVs <span aria-hidden="true">→</span></button>
+        </section>
+
+        <section className="panel" aria-label="Upcoming application dates">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Applications</p>
+              <h2>Upcoming dates</h2>
+            </div>
+          </div>
+          {upcoming.length ? (
+            <ul className="activity-list">
+              {upcoming.map(({ application, kind, day }) => (
+                <li key={`${application.id}-${kind}`}>
+                  <span className={`status-dot ${day < today ? "overdue" : "generated"}`} />
+                  <div>
+                    <strong>{jobTitle(data.jobs, application.job_description_id)}</strong>
+                    <small>{kind}{day < today ? " (overdue)" : ""} · {APPLICATION_STATUS_LABELS[application.status]}</small>
+                  </div>
+                  <span className="muted">{day}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState title="Nothing due in the next two weeks" text="Record deadlines and follow-up dates on your tracked applications." />
+          )}
+          <button className="text-button" onClick={() => navigate("Applications")}>Open applications <span aria-hidden="true">→</span></button>
         </section>
       </div>
 
@@ -287,6 +340,7 @@ export function DocumentsView({
   data,
   onUpload,
   onExtract,
+  onSuggest,
   onDownload,
   onGetText,
   busy,
@@ -294,7 +348,8 @@ export function DocumentsView({
 }: {
   data: WorkspaceData;
   onUpload: (file: File) => Promise<unknown>;
-  onExtract: (documentId: string) => Promise<unknown>;
+  onExtract: (documentId: string) => Promise<string>;
+  onSuggest: (documentId: string) => Promise<string>;
   onDownload: (documentId: string, filename: string) => Promise<unknown>;
   onGetText: (documentId: string) => Promise<ExtractedText>;
   busy: boolean;
@@ -330,12 +385,12 @@ export function DocumentsView({
               return <article className="document-row" key={document.id}>
                 <div className="file-mark" aria-hidden="true">{document.original_filename.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE"}</div>
                 <div className="document-details"><strong>{document.original_filename}</strong><span>{formatBytes(document.size_bytes)} · Uploaded {formatDate(document.created_at)}</span><div className="document-meta"><span className="status-pill">{document.document_kind === "source_cv" ? "Source CV" : "Supporting document"}</span><span className={`status-pill ${extraction?.status || "pending"}`}>{extraction ? extraction.status.replace("_", " ") : "Not extracted"}</span>{extraction?.error_category && <span className="muted">· {extraction.error_category.replaceAll("_", " ")}</span>}</div></div>
-                <div className="row-actions"><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onDownload(document.id, document.original_filename), "Source document downloaded.", "Downloading document…")} type="button">Download</button><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onExtract(document.id), "Text extraction completed.", "Extracting text…")} type="button">{extraction ? "Retry extraction" : "Extract text"}</button>{extraction?.status === "succeeded" && <button className="text-button" disabled={busy} onClick={() => runAction(async () => setSelectedText(await onGetText(document.id)), undefined, "Loading extracted text…")} type="button">View extracted text</button>}</div>
+                <div className="row-actions"><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onDownload(document.id, document.original_filename), "Source document downloaded.", "Downloading document…")} type="button">Download</button><button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onExtract(document.id), (message) => String(message), "Extracting text and suggesting evidence…")} type="button">{extraction ? "Retry extraction" : "Extract text"}</button>{extraction?.status === "succeeded" && <button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onSuggest(document.id), (message) => String(message), "Suggesting evidence from this document…")} type="button">Suggest evidence</button>}{extraction?.status === "succeeded" && <button className="text-button" disabled={busy} onClick={() => runAction(async () => setSelectedText(await onGetText(document.id)), undefined, "Loading extracted text…")} type="button">View extracted text</button>}</div>
               </article>;
             })}
           </div>
         )}
-        <p className="inline-note">Source uploads are immutable and the API has no document deletion endpoint. Extracted text is unverified source content, not proof of a claim. Scanned PDFs do not receive OCR.</p>
+        <p className="inline-note">Source uploads are immutable and the API has no document deletion endpoint. Extracted text is unverified source content, not proof of a claim. Scanned PDFs do not receive OCR. After extraction, JobPilot suggests evidence on this computer using fixed rules; every suggestion stays unreviewed until you confirm it, and contact details are never suggested.</p>
       </section>
       {selectedText && <section className="panel extracted-panel"><div className="section-title"><div><p className="eyebrow">Unverified source content</p><h2>Extracted text</h2></div><button aria-label="Close extracted text" className="icon-button" onClick={() => setSelectedText(null)}>×</button></div><p className="inline-note">{selectedText.note}</p><pre className="source-text">{selectedText.text || "No readable embedded text was found."}</pre></section>}
     </div>
@@ -347,6 +402,7 @@ export function EvidenceView({
   onGetText,
   onCreate,
   onSetStatus,
+  onRelink,
   busy,
   runAction,
 }: {
@@ -354,6 +410,7 @@ export function EvidenceView({
   onGetText: (documentId: string) => Promise<ExtractedText>;
   onCreate: (payload: { source_document_id: string; category: string; description: string; source_excerpt: string; source_section?: string }) => Promise<unknown>;
   onSetStatus: (id: string, status: EvidenceStatus) => Promise<unknown>;
+  onRelink: (id: string, sourceExcerpt: string) => Promise<unknown>;
   busy: boolean;
   runAction: RunAction;
 }) {
@@ -363,6 +420,15 @@ export function EvidenceView({
   const [sourceSection, setSourceSection] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [textByDocument, setTextByDocument] = useState<Record<string, ExtractedText>>({});
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+
+  // The clicked button disappears once a decision is saved; keep keyboard focus on
+  // the same card without moving the page, so review continues from where it was.
+  async function review(id: string, status: EvidenceStatus, success: string, pending: string) {
+    if (await runAction(() => onSetStatus(id, status), success, pending)) {
+      cardRefs.current.get(id)?.focus({ preventScroll: true });
+    }
+  }
 
   function createEvidence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -385,20 +451,23 @@ export function EvidenceView({
   return (
     <div className="view-stack">
       <PageHeading eyebrow="Review before use" title="Evidence review" description="Extracted text is unverified. Only information you explicitly confirm can support tailored CV claims." />
-      <section className="panel trust-banner"><span aria-hidden="true">!</span><p><strong>Nothing is confirmed automatically.</strong> Review the source and evidence description before marking a claim candidate-confirmed. Rejected or unreviewed evidence is excluded from CV generation.</p></section>
+      <section className="panel trust-banner"><span aria-hidden="true">!</span><p><strong>Nothing is confirmed automatically.</strong> Suggestions found in your extracted documents start unreviewed. Review the source and evidence description before marking a claim candidate-confirmed. Rejected or unreviewed evidence is excluded from CV generation.</p></section>
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Source references</p><h2>Candidate evidence</h2></div><span className="count-pill">{data.evidence.length}</span></div>
-        {data.evidence.length === 0 ? <EmptyState title="No evidence records yet" text="Create a record from text extracted from one of your source documents." /> : <div className="evidence-list">{data.evidence.map((item) => {
+        {data.evidence.length === 0 ? <EmptyState title="No evidence records yet" text="Create a record from text extracted from one of your source documents." /> : <div className="evidence-list">{[...data.evidence].sort(compareEvidence).map((item) => {
           const source = data.documents.find((document) => document.id === item.source_document_id);
           const text = textByDocument[item.source_document_id];
-          return <article className="evidence-card" key={item.id}>
-            <div className="evidence-card-head"><div><span className={`status-pill evidence-${item.confirmation_status}`}>{statusLabel(item.confirmation_status)}</span><span className="category-label">{categoryLabels[item.category]}</span></div><small>{formatDate(item.created_at)}</small></div>
+          const stale = item.source_current === false;
+          return <article aria-label={`Evidence: ${item.description}`} className="evidence-card" key={item.id} ref={(element) => { if (element) cardRefs.current.set(item.id, element); else cardRefs.current.delete(item.id); }} tabIndex={-1}>
+            <div className="evidence-card-head"><div><span className={`status-pill evidence-${item.confirmation_status}`}>{statusLabel(item.confirmation_status)}</span><span className="category-label">{categoryLabels[item.category]}</span>{stale && <span className="status-pill failed">Source text changed</span>}</div><small>{formatDate(item.created_at)}</small></div>
             <h3>{item.description}</h3>
-            <p className="source-reference">Source: {source?.original_filename || "Source document unavailable"}{item.source_section ? ` · ${item.source_section}` : ""}</p>
+            <p className="source-reference">Source: {source?.original_filename || "Source document unavailable"}{item.source_section ? ` · Section: ${item.source_section}` : ""}</p>
             {item.source_excerpt && <blockquote>{item.source_excerpt}</blockquote>}
+            {stale && <p className="validation-error" role="note">This excerpt is no longer in the document's current extracted text, so it is not used for CVs or matching. Re-link it if the same words are still in the document, or reject it.</p>}
             <div className="evidence-actions">
-              {item.confirmation_status !== "candidate_confirmed" && <button className="button button-primary" disabled={busy} onClick={() => runAction(() => onSetStatus(item.id, "candidate_confirmed"), "Evidence marked candidate-confirmed.", "Confirming evidence…")} type="button">Confirm evidence</button>}
-              {item.confirmation_status !== "rejected" && <button className="button button-danger-quiet" disabled={busy} onClick={() => runAction(() => onSetStatus(item.id, "rejected"), "Evidence rejected and excluded from CV generation.", "Rejecting evidence…")} type="button">Reject</button>}
+              {stale && item.source_excerpt && <button className="button button-secondary" disabled={busy} onClick={() => runAction(() => onRelink(item.id, item.source_excerpt as string), "Evidence re-linked to the current extracted text. Your review decision is unchanged.", "Re-linking evidence…")} type="button">Re-link to current text</button>}
+              {item.confirmation_status !== "candidate_confirmed" && <button className="button button-primary" disabled={busy || stale} onClick={() => void review(item.id, "candidate_confirmed", "Evidence marked candidate-confirmed.", "Confirming evidence…")} type="button">Confirm evidence</button>}
+              {item.confirmation_status !== "rejected" && <button className="button button-danger-quiet" disabled={busy} onClick={() => void review(item.id, "rejected", "Evidence rejected and excluded from CV generation.", "Rejecting evidence…")} type="button">Reject</button>}
               {source && <button className="text-button" disabled={busy} onClick={() => runAction(async () => setTextByDocument({ ...textByDocument, [source.id]: await onGetText(source.id) }), undefined, "Loading source text…")} type="button">{text ? "Refresh source text" : "Review source text"}</button>}
             </div>
             {text && <details className="source-review"><summary>Extracted source text <span>Unverified content</span></summary><pre className="source-text">{text.text || "No readable text."}</pre></details>}
@@ -461,13 +530,14 @@ export function JobsView({
       <div className="form-footer"><span className="muted">Saved roles are retained independently from CV drafts.</span><button className="button button-primary" disabled={busy} type="submit">Save job description</button></div>
     </form>
     <section className="panel"><div className="section-title"><div><p className="eyebrow">Saved locally</p><h2>Saved roles</h2></div><span className="count-pill">{jobs.length}</span></div>
-      {jobs.length === 0 ? <EmptyState title="No job descriptions saved" text="Paste a role above to start a job-specific CV workflow." /> : <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div className="job-card-title"><div><h3>{job.job_title}</h3><p>{job.company || "Company not provided"} · Added {formatDate(job.created_at)}</p></div>{job.source_url && <a className="text-button" href={job.source_url} rel="noreferrer" target="_blank">Open source <span aria-hidden="true">↗</span></a>}</div><details><summary>View full description</summary><p className="job-description">{job.description}</p></details></article>)}</div>}
+      {jobs.length === 0 ? <EmptyState title="No job descriptions saved" text="Paste a role above to start a job-specific CV workflow." /> : <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div className="job-card-title"><div><h3>{job.job_title}</h3><p>{job.company || "Company not provided"} · Added {formatDate(job.created_at)}{job.source_job_listing_id ? " · Imported from discovered jobs" : ""}</p></div>{job.source_url && <a className="text-button" href={job.source_url} rel="noreferrer" target="_blank">Open source <span aria-hidden="true">↗</span></a>}</div><details><summary>View full description</summary><p className="job-description">{job.description}</p></details></article>)}</div>}
     </section>
   </div>;
 }
 
 export function DraftsView({
   data,
+  initialJobId = "",
   onGenerate,
   onCreateExport,
   onDownloadExport,
@@ -475,34 +545,69 @@ export function DraftsView({
   runAction,
 }: {
   data: WorkspaceData;
-  onGenerate: (jobId: string) => Promise<unknown>;
+  initialJobId?: string;
+  onGenerate: (jobId: string, sourceDocumentId?: string) => Promise<unknown>;
   onCreateExport: (jobId: string, draftId: string, format: ExportFormat) => Promise<unknown>;
   onDownloadExport: (jobId: string, draftId: string, exportId: string, filename: string) => Promise<unknown>;
   busy: boolean;
   runAction: RunAction;
 }) {
-  const [jobId, setJobId] = useState("");
+  const [jobId, setJobId] = useState(initialJobId);
+  const [sourceDocumentId, setSourceDocumentId] = useState("");
+  const selectedJob = data.jobs.find((job) => job.id === jobId);
+  const sourceCvs = data.documents.filter((document) => data.extractions[document.id]?.status === "succeeded");
   return <div className="view-stack">
-    <PageHeading eyebrow="Evidence-backed applications" title="Tailored CVs" description="Generate and review a separate CV draft for a saved role. Unsupported requirements remain gaps, not candidate claims." />
-    <section className="panel generation-panel"><div><p className="eyebrow">Create a new draft</p><h2>Select a saved job</h2><p className="muted">Generation uses candidate profile data and candidate-confirmed evidence only.</p></div><div className="generation-controls"><select aria-label="Saved job description" value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">Choose a job description</option>{data.jobs.map((job) => <option key={job.id} value={job.id}>{job.job_title}{job.company ? ` · ${job.company}` : ""}</option>)}</select><button className="button button-primary" disabled={!jobId || busy} onClick={() => runAction(() => onGenerate(jobId), "CV draft generated and saved.", "Generating CV draft…")} type="button">Generate CV draft</button></div>{data.jobs.length === 0 && <p className="inline-note">Save a job description before generating a draft.</p>}</section>
+    <PageHeading eyebrow="Evidence-backed applications" title="Tailored CVs" description="Check how your records match a saved role, then write, review and approve a tailored CV. Unsupported requirements remain gaps, not candidate claims." />
+    <section className="panel generation-panel"><div><p className="eyebrow">Create a new draft</p><h2>Select a saved job</h2><p className="muted">Analysis and writing run locally on this computer and use your profile and candidate-confirmed evidence only.</p></div><div className="generation-controls"><select aria-label="Saved job description" value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">Choose a job description</option>{data.jobs.map((job) => <option key={job.id} value={job.id}>{job.job_title}{job.company ? ` · ${job.company}` : ""}</option>)}</select><select aria-label="Uploaded CV to check" value={sourceDocumentId} onChange={(event) => setSourceDocumentId(event.target.value)}><option value="">No uploaded CV selected</option>{sourceCvs.map((document) => <option key={document.id} value={document.id}>{document.original_filename}</option>)}</select><button className="button button-primary" disabled={!jobId || busy} onClick={() => runAction(() => onGenerate(jobId, sourceDocumentId || undefined), generationMessage, "Writing CV draft…")} type="button">{busy ? "Working…" : "Generate CV draft"}</button></div>{data.jobs.length === 0 && <p className="inline-note">Save a job description before generating a draft.</p>}{selectedJob?.source_job_listing_id && <p className="inline-note">Imported from a discovered listing. Check its Kenya eligibility below before applying.</p>}<p className="inline-note">Your uploaded CV is only read to check its layout and point out statements to confirm. It is never changed or replaced.</p></section>
+    {selectedJob && <JobFitPanel jobId={selectedJob.id} profileId={data.profile.id} refreshKey={data} />}
+    {selectedJob && <AtsPanel busy={busy} experiences={data.experiences} jobId={selectedJob.id} profileId={data.profile.id} refreshKey={data} runAction={runAction} sourceDocumentId={sourceDocumentId} />}
     <section className="panel"><div className="section-title"><div><p className="eyebrow">Saved versions</p><h2>CV drafts</h2></div><span className="count-pill">{data.drafts.length}</span></div>
       {data.drafts.length === 0 ? <EmptyState title="No CV drafts yet" text="Generated and failed attempts will appear here. Each attempt is saved separately." /> : <div className="draft-list">{data.drafts.map((draft) => {
         const job = data.jobs.find((item) => item.id === draft.job_description_id);
         const draftExports = data.exports.filter((item) => item.cv_draft_id === draft.id);
+        const review = draft.structured_content?.review;
+        const awaitingApproval = Boolean(review && review.approval_status !== "approved");
+        const hasContent = draft.status !== "failed" && Boolean(draft.generated_content);
+        const issues = draft.validation_results.issues ?? [];
         return <article className="draft-card" key={draft.id}>
-          <div className="draft-header"><div><span className={`status-pill ${draft.status}`}>{draft.status === "generated" ? "Validated draft" : "Needs more evidence"}</span><h3>{job?.job_title || "Saved job"}{job?.company ? ` · ${job.company}` : ""}</h3><p>Created {formatDate(draft.created_at)}</p></div></div>
-          {draft.status === "generated" && draft.generated_content ? <details className="draft-content"><summary>Review generated CV text</summary><pre>{draft.generated_content}</pre></details> : <p className="validation-error">This draft failed validation. It is preserved for review, but cannot be exported.</p>}
-          {(draft.validation_results.errors.length > 0 || draft.validation_results.gaps.length > 0 || draft.validation_results.warnings.length > 0) && <div className="validation-results">
-            {draft.validation_results.errors.length > 0 && <ResultList title="Validation issues" items={draft.validation_results.errors} kind="error" />}
-            {draft.validation_results.gaps.length > 0 && <ResultList title="Evidence and skill gaps" items={draft.validation_results.gaps} kind="gap" />}
+          <div className="draft-header"><div><span className={`status-pill ${draft.status}`}>{DRAFT_STATUS_LABELS[draft.status]}</span>{review && <span className="ats-basis">{review.parent_draft_id ? "Edited version" : "Reviewed writer"}</span>}<h3>{job?.job_title || "Saved job"}{job?.company ? ` · ${job.company}` : ""}</h3><p>Created {formatDate(draft.created_at)}</p></div></div>
+          {draft.status === "needs_review" && <p className="inline-note">This draft is saved but incomplete: your records do not yet support every part of the CV layout. Nothing was invented to fill the gaps. Add the missing evidence and generate again, or approve it as incomplete to export it.</p>}
+          {hasContent && review && <DraftReview busy={busy} draft={draft} profileId={data.profile.id} runAction={runAction} />}
+          {hasContent ? <details className="draft-content"><summary>Preview CV text</summary><pre>{draft.generated_content}</pre></details> : <p className="validation-error">This draft failed validation. It is preserved for review, but cannot be exported.</p>}
+          {(draft.validation_results.errors.length > 0 || issues.length > 0 || draft.validation_results.gaps.length > 0 || draft.validation_results.warnings.length > 0) && <div className="validation-results">
+            {draft.validation_results.errors.length > 0 && <ResultList title="Validation errors" items={draft.validation_results.errors} kind="error" />}
+            {(["experience_evidence", "profile_evidence"] as const).map((group) => {
+              const grouped = issues.filter((issue) => issue.group === group);
+              return grouped.length > 0 && <section className="result-list gap" key={group}><h4>{ISSUE_GROUP_LABELS[group]}</h4><ul>{grouped.map((issue, index) => <li key={index}><strong>{issue.message}</strong> {issue.action}</li>)}</ul></section>;
+            })}
+            {draft.validation_results.gaps.length > 0 && <details className="result-list gap"><summary>Job requirements not shown on this CV ({draft.validation_results.gaps.length})</summary><ul>{draft.validation_results.gaps.map((gap, index) => <li key={index}>{gap}</li>)}</ul><p className="muted">Answer them in the requirement review above if any are genuinely true for you.</p></details>}
             {draft.validation_results.warnings.length > 0 && <ResultList title="Notes" items={draft.validation_results.warnings} kind="warning" />}
           </div>}
-          {draft.status === "generated" && job && <div className="draft-export-actions"><span className="muted">Export validated version:</span>{(["pdf", "docx"] as const).map((format) => <button className="button button-secondary" disabled={busy} key={format} onClick={() => runAction(() => onCreateExport(job.id, draft.id, format), `${format.toUpperCase()} export created.`, `Creating ${format.toUpperCase()} export…`)} type="button">Export {format.toUpperCase()}</button>)}</div>}
+          {hasContent && job && <div className="draft-export-actions"><span className="muted">{awaitingApproval ? "Approve this draft to export it:" : "Export validated version:"}</span>{(["pdf", "docx"] as const).map((format) => <button className="button button-secondary" disabled={busy || awaitingApproval} key={format} onClick={() => runAction(() => onCreateExport(job.id, draft.id, format), `${format.toUpperCase()} export created.`, `Creating ${format.toUpperCase()} export…`)} type="button">Export {format.toUpperCase()}</button>)}</div>}
           {draftExports.length > 0 && job && <div className="draft-export-list"><strong>Exports</strong>{draftExports.map((item) => <div className="export-row" key={item.id}><span>{item.export_format.toUpperCase()} · {formatDate(item.created_at)}{item.page_count ? ` · ${item.page_count} page${item.page_count === 1 ? "" : "s"}` : ""}</span><button className="text-button" disabled={busy} onClick={() => runAction(() => onDownloadExport(job.id, draft.id, item.id, item.filename), "Export downloaded.", "Downloading export…")} type="button">Download</button></div>)}</div>}
         </article>;
       })}</div>}
     </section>
   </div>;
+}
+
+const DRAFT_STATUS_LABELS: Record<CvDraft["status"], string> = {
+  generated: "Validated draft",
+  needs_review: "Incomplete: needs your review",
+  failed: "Failed validation",
+};
+const ISSUE_GROUP_LABELS = {
+  experience_evidence: "Work experience evidence",
+  profile_evidence: "Profile details",
+} as const;
+
+function generationMessage(result: unknown): string {
+  const draft = result as CvDraft | undefined;
+  if (draft?.status === "needs_review") {
+    const count = draft.validation_results.issues?.length ?? 0;
+    return `Draft saved, but incomplete (${count} item${count === 1 ? "" : "s"} to address). See the draft below; nothing was invented to fill the gaps.`;
+  }
+  return "CV draft written and saved. Review the changes, then approve it for export.";
 }
 
 export function ExportsView({
@@ -917,6 +1022,16 @@ function profileForm(data: WorkspaceData): ProfileFormState {
 
 function jobTitle(jobs: JobDescription[], jobId: string) {
   return jobs.find((job) => job.id === jobId)?.job_title || "Saved job description";
+}
+
+// Same order as the API: newest first, then document, then position in the
+// document. Records created together share a timestamp, and the tie-breakers
+// keep a card where it is after its status changes.
+function compareEvidence(left: CandidateEvidence, right: CandidateEvidence): number {
+  return right.created_at.localeCompare(left.created_at)
+    || left.source_document_id.localeCompare(right.source_document_id)
+    || (left.source_start ?? Number.MAX_SAFE_INTEGER) - (right.source_start ?? Number.MAX_SAFE_INTEGER)
+    || left.id.localeCompare(right.id);
 }
 
 function statusLabel(status: EvidenceStatus) {

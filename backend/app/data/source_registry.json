@@ -1,0 +1,1076 @@
+{
+  "version": 1,
+  "updated_on": "2026-10-17",
+  "notes": "Each entry records how it was verified. 'regions_served' stays empty unless verified. Manual entries are never fetched automatically.",
+  "entries": [
+    {
+      "id": "gitlab",
+      "name": "GitLab",
+      "category": "direct_employer",
+      "official_domain": "gitlab.com",
+      "additional_domains": [
+        "about.gitlab.com"
+      ],
+      "careers_url": "https://about.gitlab.com/jobs/all-jobs/",
+      "regions_served": [],
+      "discovery": {
+        "method": "greenhouse",
+        "board": "gitlab",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T00:00:00Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Inspected the official careers page's JavaScript asset.",
+        "evidence": "https://about.gitlab.com/_nuxt/4xV37onP.js references boards-api.greenhouse.io/v1/boards/gitlab.",
+        "direct_links_verified": false
+      },
+      "terms": "Greenhouse Job Board API: public GET endpoints, no authentication (developers.greenhouse.io/job-board.html).",
+      "limitations": "Many roles are restricted to specific countries; review eligibility per listing.",
+      "focus": [
+        "customer_support",
+        "technical_support",
+        "engineering"
+      ]
+    },
+    {
+      "id": "canonical",
+      "name": "Canonical",
+      "category": "direct_employer",
+      "official_domain": "canonical.com",
+      "additional_domains": [],
+      "careers_url": "https://canonical.com/careers/all",
+      "regions_served": [],
+      "discovery": {
+        "method": "greenhouse",
+        "board": "canonical",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:35Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://canonical.com/careers/all (HTTP 200) links to the Greenhouse board 'canonical'.",
+        "direct_links_verified": false
+      },
+      "terms": "Greenhouse Job Board API: public GET endpoints, no authentication (developers.greenhouse.io/job-board.html).",
+      "limitations": "",
+      "focus": [
+        "technical_support",
+        "engineering"
+      ]
+    },
+    {
+      "id": "sourcegraph",
+      "name": "Sourcegraph",
+      "category": "direct_employer",
+      "official_domain": "sourcegraph.com",
+      "additional_domains": [],
+      "careers_url": "https://sourcegraph.com/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "greenhouse",
+        "board": "sourcegraph91",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:36Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://sourcegraph.com/jobs (HTTP 200) links to the Greenhouse board 'sourcegraph91'.",
+        "direct_links_verified": false
+      },
+      "terms": "Greenhouse Job Board API: public GET endpoints, no authentication (developers.greenhouse.io/job-board.html).",
+      "limitations": "",
+      "focus": [
+        "engineering",
+        "technical_support"
+      ]
+    },
+    {
+      "id": "andela",
+      "name": "Andela",
+      "category": "recruitment_outsourcing",
+      "official_domain": "andela.com",
+      "additional_domains": [],
+      "careers_url": "https://www.andela.com/for-talent",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "andela",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:52Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.andela.com/for-talent (HTTP 200) links to the Ashby board 'andela'. /careers redirects to /for-talent.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "Board may list Andela's own roles rather than talent-network placements; confirm per listing.",
+      "focus": [
+        "engineering"
+      ]
+    },
+    {
+      "id": "toggl",
+      "name": "Toggl",
+      "category": "direct_employer",
+      "official_domain": "toggl.com",
+      "additional_domains": [],
+      "careers_url": "https://toggl.com/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "toggl",
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:16Z",
+        "outcome": "board_link_found_api_not_found",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://toggl.com/jobs (HTTP 200) links to the Ashby board 'toggl'. The Ashby public API returned HTTP 404 for board 'toggl' on 2026-10-17T00:14Z; the API board name was not guessed. Disabled until the correct board name is verified.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "",
+      "focus": [
+        "customer_support",
+        "engineering"
+      ]
+    },
+    {
+      "id": "kraken",
+      "name": "Kraken",
+      "category": "direct_employer",
+      "official_domain": "kraken.com",
+      "additional_domains": [],
+      "careers_url": "https://www.kraken.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "kraken.com",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:39Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.kraken.com/careers (HTTP 200) links to the Ashby board 'kraken.com'.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "",
+      "focus": [
+        "customer_support",
+        "engineering"
+      ]
+    },
+    {
+      "id": "1password",
+      "name": "1Password",
+      "category": "direct_employer",
+      "official_domain": "1password.com",
+      "additional_domains": [],
+      "careers_url": "https://1password.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "1password",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:43Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://1password.com/careers (HTTP 200) links to the Ashby board '1password'.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "",
+      "focus": [
+        "customer_support",
+        "engineering"
+      ]
+    },
+    {
+      "id": "m-kopa",
+      "name": "M-KOPA",
+      "category": "direct_employer",
+      "official_domain": "m-kopa.com",
+      "additional_domains": [],
+      "careers_url": "https://www.m-kopa.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "M-KOPA",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:47Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.m-kopa.com/careers (HTTP 200) links to the Ashby board 'M-KOPA'.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "Kenya-headquartered employer; roles may be office-based in specific African countries.",
+      "focus": [
+        "customer_support",
+        "technical_support"
+      ]
+    },
+    {
+      "id": "oyster",
+      "name": "Oyster",
+      "category": "recruitment_outsourcing",
+      "official_domain": "oysterhr.com",
+      "additional_domains": [],
+      "careers_url": "https://www.oysterhr.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "ashby",
+        "board": "oyster",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:08Z",
+        "outcome": "board_found_on_official_page",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.oysterhr.com/careers (HTTP 200) links to the Ashby board 'oyster'.",
+        "direct_links_verified": false
+      },
+      "terms": "Ashby public job posting API: public, no authentication (developers.ashbyhq.com/docs/public-job-posting-api).",
+      "limitations": "Board lists Oyster's own roles; its employer-of-record service is not a job feed.",
+      "focus": [
+        "customer_support"
+      ]
+    },
+    {
+      "id": "wikimedia-foundation",
+      "name": "Wikimedia Foundation",
+      "category": "direct_employer",
+      "official_domain": "wikimediafoundation.org",
+      "additional_domains": [],
+      "careers_url": "https://wikimediafoundation.org/jobs/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:40Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://wikimediafoundation.org/jobs/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "mozilla",
+      "name": "Mozilla",
+      "category": "direct_employer",
+      "official_domain": "mozilla.org",
+      "additional_domains": [],
+      "careers_url": "https://www.mozilla.org/en-US/careers/listings/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:45Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.mozilla.org/en-US/careers/listings/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "automattic",
+      "name": "Automattic",
+      "category": "direct_employer",
+      "official_domain": "automattic.com",
+      "additional_domains": [],
+      "careers_url": "https://automattic.com/work-with-us/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:48Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://automattic.com/work-with-us/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "zapier",
+      "name": "Zapier",
+      "category": "direct_employer",
+      "official_domain": "zapier.com",
+      "additional_domains": [],
+      "careers_url": "https://zapier.com/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:56:57Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://zapier.com/jobs (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "remote",
+      "name": "Remote",
+      "category": "recruitment_outsourcing",
+      "official_domain": "remote.com",
+      "additional_domains": [],
+      "careers_url": "https://remote.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:00Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://remote.com/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "deel",
+      "name": "Deel",
+      "category": "recruitment_outsourcing",
+      "official_domain": "deel.com",
+      "additional_domains": [],
+      "careers_url": "https://www.deel.com/careers/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:04Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.deel.com/careers/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "doist",
+      "name": "Doist",
+      "category": "direct_employer",
+      "official_domain": "doist.com",
+      "additional_domains": [
+        "todoist.com"
+      ],
+      "careers_url": "https://www.todoist.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:08Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.todoist.com/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript). Redirects to todoist.com, the Doist product domain.",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "kinsta",
+      "name": "Kinsta",
+      "category": "direct_employer",
+      "official_domain": "kinsta.com",
+      "additional_domains": [],
+      "careers_url": "https://kinsta.com/careers/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:12Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://kinsta.com/careers/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "duckduckgo",
+      "name": "DuckDuckGo",
+      "category": "direct_employer",
+      "official_domain": "duckduckgo.com",
+      "additional_domains": [],
+      "careers_url": "https://duckduckgo.com/hiring",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:21Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://duckduckgo.com/hiring (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "flutterwave",
+      "name": "Flutterwave",
+      "category": "direct_employer",
+      "official_domain": "flutterwave.com",
+      "additional_domains": [],
+      "careers_url": "https://flutterwave.com/us/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:50Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://flutterwave.com/us/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "chipper-cash",
+      "name": "Chipper Cash",
+      "category": "direct_employer",
+      "official_domain": "chippercash.com",
+      "additional_domains": [],
+      "careers_url": "https://chippercash.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:54Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://chippercash.com/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "moniepoint",
+      "name": "Moniepoint",
+      "category": "direct_employer",
+      "official_domain": "moniepoint.com",
+      "additional_domains": [],
+      "careers_url": "https://moniepoint.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:57Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://moniepoint.com/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "wave",
+      "name": "Wave",
+      "category": "direct_employer",
+      "official_domain": "wave.com",
+      "additional_domains": [],
+      "careers_url": "https://www.wave.com/en/careers/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:57:59Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.wave.com/en/careers/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "paystack",
+      "name": "Paystack",
+      "category": "direct_employer",
+      "official_domain": "paystack.com",
+      "additional_domains": [],
+      "careers_url": "https://paystack.com/ke/careers?q=/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:02Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://paystack.com/ke/careers?q=/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "toptal",
+      "name": "Toptal",
+      "category": "recruitment_outsourcing",
+      "official_domain": "toptal.com",
+      "additional_domains": [],
+      "careers_url": "https://www.toptal.com/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:10Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.toptal.com/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "turing",
+      "name": "Turing",
+      "category": "recruitment_outsourcing",
+      "official_domain": "turing.com",
+      "additional_domains": [],
+      "careers_url": "https://www.turing.com/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:14Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.turing.com/jobs (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "crossover",
+      "name": "Crossover",
+      "category": "recruitment_outsourcing",
+      "official_domain": "crossover.com",
+      "additional_domains": [],
+      "careers_url": "https://www.crossover.com/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:17Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.crossover.com/jobs (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "randstad",
+      "name": "Randstad",
+      "category": "staffing_agency",
+      "official_domain": "randstad.com",
+      "additional_domains": [],
+      "careers_url": "https://www.randstad.com/jobs/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:24Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.randstad.com/jobs/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "adecco",
+      "name": "Adecco",
+      "category": "staffing_agency",
+      "official_domain": "adecco.com",
+      "additional_domains": [],
+      "careers_url": "https://www.adecco.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:29Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.adecco.com/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "manpowergroup",
+      "name": "ManpowerGroup",
+      "category": "staffing_agency",
+      "official_domain": "manpowergroup.com",
+      "additional_domains": [],
+      "careers_url": "https://www.manpowergroup.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:33Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.manpowergroup.com/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "hays",
+      "name": "Hays",
+      "category": "staffing_agency",
+      "official_domain": "hays.com",
+      "additional_domains": [],
+      "careers_url": "https://www.hays.com/en-US",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:37Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.hays.com/en-US (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "robert-half",
+      "name": "Robert Half",
+      "category": "staffing_agency",
+      "official_domain": "roberthalf.com",
+      "additional_domains": [],
+      "careers_url": "https://www.roberthalf.com/us/en/jobs",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:40Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.roberthalf.com/us/en/jobs (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "michael-page",
+      "name": "Michael Page",
+      "category": "staffing_agency",
+      "official_domain": "michaelpage.com",
+      "additional_domains": [],
+      "careers_url": "https://www.michaelpage.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:48Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.michaelpage.com/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "lhh",
+      "name": "LHH",
+      "category": "staffing_agency",
+      "official_domain": "lhh.com",
+      "additional_domains": [],
+      "careers_url": "https://www.lhh.com/en-us",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:50Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.lhh.com/en-us (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "korn-ferry",
+      "name": "Korn Ferry",
+      "category": "staffing_agency",
+      "official_domain": "kornferry.com",
+      "additional_domains": [],
+      "careers_url": "https://www.kornferry.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:54Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.kornferry.com/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "teksystems",
+      "name": "TEKsystems",
+      "category": "staffing_agency",
+      "official_domain": "teksystems.com",
+      "additional_domains": [],
+      "careers_url": "https://www.teksystems.com/en/careers",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:58Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.teksystems.com/en/careers (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "experis",
+      "name": "Experis",
+      "category": "staffing_agency",
+      "official_domain": "experis.com",
+      "additional_domains": [],
+      "careers_url": "https://www.experis.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:59:02Z",
+        "outcome": "careers_page_reachable_no_feed",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.experis.com/ (HTTP 200) reachable; no ATS board link in its HTML (jobs may be rendered by JavaScript).",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only: open the careers page and import or paste specific vacancies.",
+      "focus": []
+    },
+    {
+      "id": "kelly",
+      "name": "Kelly",
+      "category": "staffing_agency",
+      "official_domain": "kellyservices.com",
+      "additional_domains": [],
+      "careers_url": "https://www.kellyservices.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:43Z",
+        "outcome": "workday_board_found_no_adapter",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official page https://www.kellyservices.com/ (HTTP 200) links to a Workday board (kellyservices.wd503.myworkdayjobs.com, corporate careers).",
+        "direct_links_verified": false
+      },
+      "terms": "Workday has no documented public posting API; not scraped.",
+      "limitations": "Manual only. The linked Workday board is the Kelly corporate careers site, not its staffing vacancies.",
+      "focus": []
+    },
+    {
+      "id": "robert-walters",
+      "name": "Robert Walters",
+      "category": "staffing_agency",
+      "official_domain": "robertwalters.com",
+      "additional_domains": [],
+      "careers_url": "https://www.robertwalters.com/",
+      "regions_served": [],
+      "discovery": {
+        "method": "manual",
+        "board": null,
+        "instance": null
+      },
+      "enabled": false,
+      "verification": {
+        "checked_at": "2026-10-16T23:58:45Z",
+        "outcome": "blocked_by_site",
+        "method": "Fetched the official careers page once (HTTP GET) and searched its HTML for ATS board links.",
+        "evidence": "Official site https://www.robertwalters.com/ returned HTTP 403 to an automated request; not retried or bypassed.",
+        "direct_links_verified": false
+      },
+      "terms": "No documented public job feed found; proprietary careers site. Not scraped.",
+      "limitations": "Manual only; automated access refused.",
+      "focus": []
+    },
+    {
+      "id": "jobicy",
+      "name": "Jobicy",
+      "category": "aggregator",
+      "official_domain": "jobicy.com",
+      "additional_domains": [],
+      "careers_url": "https://jobicy.com/jobs-rss-feed",
+      "regions_served": [],
+      "discovery": {
+        "method": "jobicy",
+        "board": "public",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-17T00:00:00Z",
+        "outcome": "public_api_documented",
+        "method": "Read the provider's public API documentation and terms (HTTP GET) and one sample response.",
+        "evidence": "API documented at https://jobicy.com/jobs-rss-feed: GET /api/v2/remote-jobs, 'No token or account is required for the public Jobs API.'",
+        "direct_links_verified": false
+      },
+      "terms": "Fair use (jobicy.com/jobs-rss-feed): reuse allowed without individual permission; keep Jobicy as the source and preserve the canonical Jobicy job URL; no more than one automated pass per hour; handle HTTP 429 with deferred retry.",
+      "limitations": "Remote jobs published in the last 7 days only. Free tier links to Jobicy pages, not the employer's ATS. An aggregator: never evidence of Kenya eligibility on its own.",
+      "focus": [
+        "customer_support",
+        "technical_support"
+      ]
+    },
+    {
+      "id": "arbeitnow",
+      "name": "Arbeitnow",
+      "category": "aggregator",
+      "official_domain": "arbeitnow.com",
+      "additional_domains": [
+        "arbeitnow.nl",
+        "arbeitnow.co.uk",
+        "arbeitnow.fr",
+        "arbeitnow.ch"
+      ],
+      "careers_url": "https://www.arbeitnow.com/blog/job-board-api",
+      "regions_served": [],
+      "discovery": {
+        "method": "arbeitnow",
+        "board": "public",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-17T00:00:00Z",
+        "outcome": "public_api_documented",
+        "method": "Read the provider's public API documentation and terms (HTTP GET) and one sample response.",
+        "evidence": "API documented at https://www.arbeitnow.com/blog/job-board-api: GET /api/job-board-api, 'requires no API key'. Listing URLs in the API's own responses use www.arbeitnow.com, .co.uk, .fr, .ch and .nl (page 1 sampled 2026-10-17).",
+        "direct_links_verified": false
+      },
+      "terms": "Free public API: 'please do not abuse. I would appreciate linking back to the site' (meta.terms); use is subject to Arbeitnow's terms of service.",
+      "limitations": "Mostly Germany and Netherlands jobs, some remote. Incremental: reads newest pages only. An aggregator: never evidence of Kenya eligibility on its own.",
+      "focus": [
+        "customer_support",
+        "technical_support"
+      ]
+    },
+    {
+      "id": "remoteok",
+      "name": "Remote OK",
+      "category": "aggregator",
+      "official_domain": "remoteok.com",
+      "additional_domains": [],
+      "careers_url": "https://remoteok.com/legal",
+      "regions_served": [],
+      "discovery": {
+        "method": "remoteok",
+        "board": "public",
+        "instance": null
+      },
+      "enabled": true,
+      "verification": {
+        "checked_at": "2026-10-17T00:00:00Z",
+        "outcome": "public_api_documented",
+        "method": "Read the provider's public API documentation and terms (HTTP GET) and one sample response.",
+        "evidence": "Public JSON API at https://remoteok.com/api; legal terms at https://remoteok.com/legal (updated July 20, 2026).",
+        "direct_links_verified": false
+      },
+      "terms": "Link back to the Remote OK URL (followed link) and mention Remote OK as the source; do not use the Remote OK logo.",
+      "limitations": "A single recent window of remote jobs. Apply links are Remote OK pages. An aggregator: never evidence of Kenya eligibility on its own.",
+      "focus": [
+        "customer_support",
+        "technical_support"
+      ]
+    }
+  ]
+}

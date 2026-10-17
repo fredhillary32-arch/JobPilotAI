@@ -4,20 +4,61 @@ JobPilot AI is a React/TypeScript frontend and FastAPI backend backed by
 PostgreSQL. The backend database integration uses SQLAlchemy 2.x, Psycopg 3,
 Pydantic Settings, and Alembic.
 
-Implemented today: local sign-in, candidate profiles and history, document
-upload and local text extraction, evidence review, manually entered job
-descriptions, evidence-backed CV drafts, and PDF/DOCX CV exports. Job
-discovery (first slice, migration `3b8e5f0c9a12`, **not yet applied to the
-configured database**): stored job listings with source provenance and
-duplicate handling, a Greenhouse public job-board adapter run from the CLI
-(`python -m app.cli discover-greenhouse --board <token> --employer "<name>"`),
-read-only `/api/v1/job-listings` and `/api/v1/job-discovery/runs` endpoints,
-and a "Discovered jobs" page. The adapter is tested only against
-documentation-shaped fixtures; no live board has been read yet. Every listing
-shows eligibility "unknown". Not yet implemented: location-eligibility and
-work-authorization checks, job/candidate match scoring, cover letters and
-screening answers, application tracking and reminders, and interview
-preparation.
+Implemented in the repository and covered by automated tests: local owner
+sign-in with session and CSRF protection and per-request candidate-resource
+ownership checks; candidate profile CRUD with work history, education, skills
+and certifications; document upload, local text extraction and evidence review
+(only candidate-uploaded source documents can become extracted text or
+evidence); manually pasted job descriptions; a local ATS-style match report
+(requirements, evidence, score, eligibility, formatting risks); deterministic,
+evidence-backed tailored CV drafts with a reviewable change log, candidate
+edits and approval; and PDF/DOCX CV exports that are read back before saving.
+
+Job discovery: a verified source registry
+(`backend/app/data/source_registry.json`,
+38 organisations; 8 enabled for automatic discovery) with Greenhouse, Lever and
+Ashby public-API adapters run from the CLI, separate rate-limited checks of each
+listing's vacancy page and application link, cross-source duplicate collapsing
+that prefers the employer's own posting, and a "Discovered jobs" page that opens
+on listings posted in the last 24 hours with source, link, vacancy-status and
+eligibility details. A listing can be
+imported into a profile's job descriptions with one action, so it flows
+straight into tailored CV generation and export.
+
+Kenya eligibility is evidence-based and reviewed by the candidate: a listing
+shows that Kenya-based applicants are accepted or excluded only after a review
+records the exact sentence from the listing that says so (see
+[docs/JOB_ELIGIBILITY_SPEC.md](./docs/JOB_ELIGIBILITY_SPEC.md)). If the
+listing's wording later changes, the result reverts to "not established".
+
+Application tracking: each saved job can be tracked once through the stages
+Saved, Eligibility review, Preparing application, Ready for review, Applied,
+Assessment or interview, Offer, Rejected, Withdrawn and Closed, with a status
+history, deadline, follow-up date, contact, notes and the tailored CV used. An
+application only counts as applied when the candidate records the date it was
+submitted. The dashboard shows active applications and dates due within two
+weeks.
+
+Work eligibility details and job fit: the candidate can confirm their country
+of residence, work authorization per country, relocation willingness and
+accepted work arrangements on the profile page. Only confirmed details are
+used; the free-text profile location is never treated as confirmed, and work
+authorization is never inferred from residence or nationality. For each saved
+job, a deterministic fit check lists requirements met (with the profile record
+or confirmed evidence that supports each), requirements not found, uncertain
+items (unreviewed evidence, unclear or contradictory location wording) and
+potential disqualifiers (a strict location or work-authorization requirement
+that conflicts with a confirmed detail). Kenya eligibility is shown separately
+from skills coverage, comes only from the reviewed listing assessment, and an
+employer's stated exclusion is never outweighed by skills coverage.
+
+Not yet implemented: adapters for staffing-agency sites (none publishes a
+documented public feed; they are registered as manual-only), Workable and other
+ATS platforms, scheduled re-checks, cover letters and screening answers,
+assisted submission, reminders beyond the dashboard, and interview preparation.
+
+This is a local, single-owner application. No push to a shared remote or any
+deployment is authorized; keep both servers bound to `127.0.0.1`.
 
 ## Local backend setup
 
@@ -121,15 +162,21 @@ The API now requires a valid session for candidate-resource routes. Profile
 IDs are selectors only: the server checks ownership for each request, and
 unassigned legacy profiles remain inaccessible until explicitly adopted by the
 local operator. Login has no public registration flow. Keep the app local and
-loopback-only; this implementation has not been verified against the configured
-PostgreSQL database or through a real browser-to-API workflow.
+loopback-only. On 2026-10-17 a 28-step walkthrough passed in Google Chrome
+(driven by Playwright) through the Vite proxy, FastAPI and PostgreSQL against a
+freshly restored and migrated copy of the configured database; the real
+account was not signed in to (see the handoff for the steps and limits).
 
-**The configured database must be migrated before the authenticated app can
-run.** As of the 2026-10-15 audit, the configured database was still at the
-pre-authentication revision `7ce347caa873`; the code requires `d4f7a19c2b86`.
-Until the migration is applied, `/readyz` returns 503 and sign-in fails. Follow
-the backup, restore-verification, and migration runbook in
-[docs/PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md) before migrating.
+**The configured database must be at the repository head before the full app
+can run.** The latest migration is `d8b4f6a2c9e1` (source verification and link
+checks). With approval, the configured `jobpilot` database was migrated from
+`a17c3e5b9d24` to `d8b4f6a2c9e1` on 2026-10-17 after a fresh verified backup and
+restore rehearsal; existing rows and documents were unchanged and `/readyz`
+returned HTTP 200. The ATS and CV-review work added no migration. A database
+below the head makes `/readyz` return 503. Follow the backup,
+restore-verification, and migration runbook in
+[docs/PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md) before any future
+migration.
 
 ## Database migrations
 
@@ -156,6 +203,27 @@ extraction on an uploaded document using the `POST` endpoint above, inspect its
 extraction reports `trust_status: "unverified_source_text"`; only evidence
 explicitly reviewed by the candidate should be marked candidate-confirmed.
 
+After a successful extraction the Documents page also calls
+`POST /api/v1/candidate-profiles/{profile_id}/documents/{document_id}/evidence-suggestions`
+(also offered as "Suggest evidence" for documents extracted earlier). Fixed
+local rules read the CV's sections and turn experience bullets, achievements,
+figures, projects, listed skills, degrees and certifications into evidence
+records. Each record is the exact extracted excerpt with its offsets and section,
+described in the CV's own words and saved as `unreviewed`. Contact details and
+summary, reference and interest sections are skipped. A document yields at most
+50 suggestions, of which at most 25 are skills. Excerpts that already have
+evidence for the document, in any review state, are skipped, so repeating the
+request never duplicates claims, brings back rejected ones or changes a
+decision. Nothing is sent to an external service.
+
+Evidence is used only while its excerpt is still at its offsets in the
+document's current successful extraction. After a failed or changed
+re-extraction the API reports `source_current: false`; such evidence keeps its
+review decision but is left out of CV drafts, ATS matching and job fit, blocks
+export of drafts that cite it, and cannot be confirmed until it is re-linked
+(`PATCH` with the same `source_excerpt` and null offsets) or rejected. No
+migration was needed: currency is computed from the stored extraction.
+
 The extraction and evidence tests use synthetic documents and in-memory
 SQLite; they do not require PostgreSQL. From `backend`, run:
 
@@ -163,6 +231,115 @@ SQLite; they do not require PostgreSQL. From `backend`, run:
 .\.venv\Scripts\python.exe -m pytest tests\test_document_extraction_and_evidence.py
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+## Strict Kenya eligibility and the job pipeline
+
+`app/services/kenya_eligibility.py` decides, from stored listing text only, one
+of `eligible`, `ineligible`, `unverified` or `needs_candidate_input`. It fails
+closed: only the employer's own location field or a role-scoped sentence that
+names Kenya (or says the role can be done from anywhere, unhedged and
+unrestricted) makes a listing eligible, and only from a registry-verified,
+non-aggregator source with a secure link. "Remote", EMEA or Africa, company
+marketing, and missing restrictions never count. Location labels or titles
+naming only other places, strict residency requirements, and work
+authorization the candidate confirmed they lack make it ineligible; work
+authorization the candidate has not confirmed makes it
+`needs_candidate_input` (never inferred from residence). A current candidate
+review takes precedence; a stale review or conflicting wording is `unverified`.
+Each decision carries the exact quotation, field, source URL and type, the
+date the text was checked, the rule and any conflicts. `GET /api/v1/job-listings`
+returns it as `kenya_eligibility` and `?kenya=eligible` returns only eligible
+listings.
+
+`GET /api/v1/candidate-profiles/{profile_id}/job-pipeline` (optional
+`posted_within_hours`, `q`, `role_family`) sorts listings into `auto_apply`,
+`needs_action`, `review_needed` and `not_eligible`, with structured reasons for
+expired, stale (not confirmed by the source for 14 days), duplicate, already
+tracked, unsafe-link and unaccepted-arrangement exclusions, plus a fit summary.
+`POST .../job-listings/{listing_id}/prepare-application` rechecks the listing,
+destination and eligibility, imports the job, writes a reviewed CV draft and a
+cover letter draft from confirmed records, and records the application as
+"Preparing application" with an audit note. Repeating it reuses everything. It
+never submits: Greenhouse, Lever and Ashby accept API applications only with
+the employer's credentials (their documentation, checked 2026-10-17), and
+JobPilot does not automate employer web forms, so the auto-apply queue stays
+empty until an authorized submission channel exists.
+
+## ATS match report and reviewed CV writer
+
+Everything here runs locally and deterministically; no CV or profile data is
+sent to any external service, and no AI provider is used.
+
+`GET /api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/ats-analysis`
+(optional `?source_document_id=`) is read-only. It splits the job description
+into essential and preferred requirements, duties, tools, experience, education,
+certifications and eligibility wording, keeping each item's exact source text
+and offsets and whether it was stated, inferred (a tool named only in the
+duties) or ambiguous. Company, salary and benefits text is ignored. Each
+requirement is then judged against the candidate's records: **matched** only
+when work history, confirmed evidence, a certification or education shows it;
+**partial** when it is only in the skills list or summary (a keyword is not
+proof) or only part of it is shown; **uncertain** when only unreviewed evidence
+or the uploaded CV mentions it; otherwise **missing**. The score (0-100) weights
+essential requirements 55, preferred 15, duties shown 15 and important terms 15,
+drops empty parts and rescales, and is returned with its per-part arithmetic, a
+"potential" score if uncertain items were confirmed, and its limitations. It is
+not a reproduction of any employer's screening system. Kenya eligibility,
+location and work-authorization findings are reported separately and always
+take precedence: an employer exclusion or a confirmed conflict sets the verdict
+regardless of score. The report also lists screening concerns (missing
+essentials, experience shortfall, employment gaps), ranked recommendations,
+and, for a selected uploaded CV, layout risks (tables used for layout, text
+boxes, columns, contact details in headers or footers, images, icon-font
+symbols, missing standard headings, mixed date formats), statements with
+figures that are not in confirmed records, and dates that disagree with the
+profile. The uploaded CV is only read; it is never modified or replaced.
+
+`POST .../job-descriptions/{job_id}/cv-drafts` with `{"writer": "reviewed"}`
+(the UI default; an empty body keeps the original writer) writes a tailored
+draft: experience in reverse date order with the profile's titles and dates,
+up to five bullets per role chosen by relevance to the job, contact details,
+skills ordered by relevance, and certifications. Statements are restated only
+by removing filler ("responsible for", "worked on", "successfully", first
+person), using past tense for finished roles and consistent punctuation; any
+restatement that would add a word or number not in the source is discarded in
+favour of the original wording. A summary sentence naming the job's
+requirements is added only when work records or confirmed evidence demonstrate
+them. `GET /api/v1/candidate-profiles/{profile_id}/cv-drafts/{draft_id}/review`
+returns, for every statement, the original, the proposed text, the reasons, the
+evidence and whether confirmation is needed, plus writing suggestions that were
+not applied, pre-export checks (sections, role dates, duplicates, characters,
+keyword repetition, length, contact details, opener variety), the plain-text
+preview and the source trace. `POST .../cv-drafts/{draft_id}/revisions` saves
+the candidate's edits as a new draft version (the original is kept); edited
+wording not found in the records is flagged. `POST .../cv-drafts/{draft_id}/approval`
+approves a draft and requires `attest_unconfirmed_statements: true` when
+flagged statements remain. Reviewed drafts cannot be exported until approved.
+Every PDF or DOCX export is read back with the local extractors and refused
+unless every approved line appears once and in order; the creation response
+includes that `verification`. Review state is stored with the draft's
+structured content.
+
+### Incomplete drafts and the candidate's answers
+
+A draft whose content is sound but incomplete (for example a role with fewer
+than five supported bullets, or no summary) is saved with status
+`needs_review` and grouped, actionable `issues`; nothing is invented to fill
+the gaps. Approve it with `acknowledge_incomplete: true` to export it.
+Integrity errors (an unsourced claim, a duplicate bullet) still fail a draft.
+
+Answer a job requirement, or record a skill on its own, under
+`/api/v1/candidate-profiles/{profile_id}/skill-confirmations` (`GET`, `POST`,
+`PUT .../{id}`, `POST .../{id}/withdraw`). Responses are `has_skill`,
+`used_in_role` (requires an example in your own words, and a recorded role or
+a project), `needs_details`, `not_possessed` and `unsure`. The server takes the
+requirement text from its own analysis of the saved job, and a role must belong
+to the same profile. Answers are the candidate's statements, never marked as
+independently verified: a confirmed skill earns half credit in the match score,
+and `evidence_strength` keeps them apart from document-backed evidence. The ATS
+report lists personal qualities and work style separately for interview
+preparation (not scored) and keeps team context ("How we work together") out of
+the requirements. This needs migration `e7c4a9d2b6f3`.
 
 ## Evidence-backed CV drafts
 
@@ -178,9 +355,10 @@ claims, and does not contact an AI service.
 
 CV drafts contain the required single-column section order and plain text.
 The draft targets one page where the source material permits it, but does not
-shrink text to force one page. The frontend does not yet render/export the CV
-draft; use the API `generated_content` and `structured_content` response for
-review. Export a successfully validated draft as PDF or DOCX through
+shrink text to force one page. The "Tailored CVs" page shows each draft's
+generated text, validation errors and gaps, and offers PDF/DOCX export for
+validated drafts; the API also returns `generated_content` and
+`structured_content`. Export a successfully validated draft as PDF or DOCX through
 `POST /api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports`
 with `{"export_format":"pdf"}` or `{"export_format":"docx"}`. List exports on
 that route with `GET`, and download one with
@@ -220,6 +398,152 @@ Export tests use synthetic CV content and in-memory SQLite. Run them from
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests\test_cv_exports.py
+```
+
+## Job discovery
+
+Discovery runs from the operator CLI, or from the **Refresh all sources** button
+in Discovered jobs, which starts the same runner in a background thread
+(`POST /api/v1/job-discovery/refresh`, authenticated and CSRF-checked) and
+reports progress at `GET /api/v1/job-discovery/refresh`; no page request waits
+on an external site, and the listing endpoints never contact one. From
+`backend`, after confirming which database the process will use:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli validate-sources                  # check the registry; no network
+.\.venv\Scripts\python.exe -m app.cli list-sources
+.\.venv\Scripts\python.exe -m app.cli discover-registry                 # every enabled source (incremental)
+.\.venv\Scripts\python.exe -m app.cli discover-registry --source gitlab # one source
+.\.venv\Scripts\python.exe -m app.cli discover-registry --full          # whole window, not only what is new
+.\.venv\Scripts\python.exe -m app.cli discovery-status                  # latest run of every enabled source
+.\.venv\Scripts\python.exe -m app.cli verify-links --limit 20 --delay 2
+.\.venv\Scripts\python.exe -m app.cli discover-greenhouse --board <token> --employer "<Employer name>"
+```
+
+`discover-registry` exits 0 when every source ran or was paced, 1 when a source
+failed, 2 for bad input and 3 when another discovery pass is running: a pass
+holds an in-process lock and, on PostgreSQL, an advisory lock, so a CLI run and
+a UI refresh never overlap. Sources whose terms ask for a gap between passes
+(Jobicy: one per hour) are skipped with the reason until it has passed
+(`--force` overrides; use sparingly). A run still marked `running` an hour after
+it started is reported as interrupted; history is never rewritten. To schedule
+discovery, register `discover-registry` with Windows Task Scheduler yourself,
+for example every four hours; nothing is scheduled automatically.
+
+Adapters use each platform's documented public API only: Greenhouse
+(`boards-api.greenhouse.io`), Lever (`api.lever.co`, `api.eu.lever.co`) and
+Ashby (`api.ashbyhq.com`), plus three free, keyless job-board aggregators whose
+terms were read on 2026-10-17 and are recorded in the registry: Jobicy
+(`jobicy.com/api/v2/remote-jobs`, cursor-paged, last 7 days, at most one pass an
+hour, credit Jobicy and keep its URL), Arbeitnow (`www.arbeitnow.com/api/job-board-api`,
+paged, newest first, link back requested) and Remote OK (`remoteok.com/api`,
+link back to Remote OK required). Remotive is not used. We Work Remotely (terms
+could not be read), Working Nomads (its terms bar building a competing service)
+and Himalayas (no terms found) were evaluated and left out. Aggregators are
+discovery sources only: their listings link to the aggregator's own page, their
+dates are shown as the job board's publication date, and Kenya wording in them
+is never treated as authoritative (it stays "not established"). Their feeds are
+windows onto recent postings, so a job missing from one response is never
+marked `missing_from_source`. Nothing about the candidate is sent to any
+source. Requests are pinned to that host, including on
+redirects, with a 20-second timeout, a 20 MB response limit and at most three
+attempts with backoff for timeouts, HTTP 429 (honouring `Retry-After`, capped)
+and 5xx. Board identifiers are validated. One failing source never stops
+`discover-registry` from running the others. Entries a run cannot store are
+counted with a reason (for example "no usable https application URL"), never
+silently dropped.
+
+The registry records, for every organisation, its official domain and careers
+page, category (direct employer, staffing agency, recruitment or outsourcing
+firm, aggregator), discovery method, and when and how it was verified. A source
+is enabled only when its job board was found on the organisation's own careers
+page; staffing agencies and employers without a documented public feed are
+manual-only and are never fetched. Each run is recorded in
+`job_discovery_runs` before fetching, so failures are kept with an error
+category. A failed fetch leaves stored listings untouched; after a successful
+run, listings the source no longer returns are marked `missing_from_source`,
+never deleted; a listing that later reappears is marked `relisted_at` without a
+new posting date. Listings store only what the source states: `posted_at` is
+Greenhouse `first_published`, Lever `createdAt` or Ashby `publishedAt` when
+present, and workplace type, countries, salary and deadline stay empty unless
+the source provides them. Every description section is kept, so location and
+eligibility wording anywhere in a posting is preserved for review. The public
+vacancy page (`listing_url`) and the application link are stored separately.
+
+`verify-links` checks a bounded number of listings (oldest-checked first, at
+least one second apart). Links are requested only over HTTPS on the source's own
+platform or official domain; redirects elsewhere are recorded as
+`redirected_off_domain` and not followed. Outcomes are `reachable`, `expired`
+(404/410, or Greenhouse's "posting not found" redirect), `auth_required`,
+`rate_limited`, `broken`, `unreachable`, `insecure` and `unverified_domain`.
+"Reachable" means the page answered; it does not prove the vacancy is open or
+that the application form works. When the vacancy page also hosts the form, the
+record says the form itself was not tested. No form is submitted.
+
+The job-listing and discovery-run endpoints require an authenticated session
+(anonymous requests receive HTTP 401). Discovered listings and runs are shared
+application records: they have no owner or candidate-profile link, so any
+signed-in user of this local app sees the same listings.
+
+`GET /api/v1/job-listings` supports `source_status`, `limit`, `offset`,
+`eligibility`, `eligible_scope` (`kenya_named`, `africa`, `emea`, `worldwide`),
+`q` (title or employer; comma-separated keywords, any of which may match),
+`role_family` (repeatable: `support_it`, `customer_support`,
+`ecommerce_support`, `operations_support`), `exclude_role_family`
+(repeatable), `source` (a registry id), `workplace` (`remote`, `hybrid`,
+`onsite`, as stated by the source), `sort` (`posted`, the default, with undated
+listings last; `discovered`; `relevance`), `kenya` (the strict state),
+`source_category`, `verified_application_link`, `include_expired_links`
+(default false), `collapse_duplicates` (default true) and `posted_within_hours`,
+which matches only listings whose source-stated `posted_at` falls between the
+cut-off and now; the UI offers 24 hours, 3, 7, 14 and 30 days, or all.
+Role groups come from the title only (`app/services/role_relevance.py`):
+technical and IT support; customer support and service; e-commerce and
+marketplace support (seller, merchant, orders, returns and refunds, payments,
+delivery, trust and safety); and related support operations (SaaS and product
+support, implementation, onboarding, service operations). Leadership,
+DevOps/SRE, customer-success management, sales and other business titles never
+match. Role and Kenya filters are applied to every candidate row before totals
+and paging. Each listing reports `role_match` (family, group and the matched
+words) and `posted_at_source` (`employer_board`, `job_board` or null when the
+source gave no date; the discovery time is never used as a posting date).
+Each listing reports its registry source, its latest vacancy-page and
+application-link checks, its vacancy status (`listed_by_source`,
+`no_longer_listed`, `link_expired`) and how many other sources list the same
+vacancy; `GET /api/v1/job-listings/{id}` lists those alternates.
+`GET /api/v1/job-sources` returns the registry with each source's run health. Listings without
+a posting date, or dated in the future, are excluded and never given a guessed
+date.
+
+Each listing reports its effective Kenya eligibility (`eligible_confirmed`,
+`not_eligible` or `eligibility_unknown`) with its currency (`not_assessed`,
+`current` or `stale`). Record a review with
+`POST /api/v1/job-listings/{listing_id}/eligibility-assessments`; a definite
+result requires an exact quotation from the listing's description or location
+that concerns this role (or a company-wide hiring policy whose wording covers
+it), and the server rejects a quotation that is not in the stored text. A
+review also records what the wording establishes (Kenya named, any African or
+EMEA country, worldwide, other countries only, restricted, conflicting, unclear
+or awaiting employer confirmation), which must fit the outcome.
+`GET .../eligibility-evidence` lists passages to review (Kenya named or
+excluded, worldwide wording, regions, residency, work authorization,
+sponsorship, time zones, employment model) and any conflicts; a listing that
+excludes Kenya, or claims worldwide hiring while restricting locations, cannot
+be recorded as accepting Kenya-based applicants.
+Nothing is inferred from "remote", a location label or office locations.
+Import a listing into a profile with
+`POST /api/v1/candidate-profiles/{profile_id}/job-descriptions/from-listing/{listing_id}`;
+the server copies the stored text verbatim and returns the existing job if it
+was imported before. Track applications under
+`/api/v1/candidate-profiles/{profile_id}/applications`, changing stages with
+`POST .../applications/{application_id}/status`.
+
+Use only boards verified from the organisation's official careers site, and add
+them to the registry with their evidence. Discovery tests use fake sources,
+mocked network calls and in-memory SQLite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_job_discovery.py tests\test_job_source_adapters.py tests\test_source_registry.py tests\test_link_verification.py
 ```
 
 ## Frontend
@@ -265,13 +589,23 @@ and invalid date ranges are rejected. Deletion requires an explicit
 confirmation. Documents can be uploaded as new immutable source files,
 downloaded, and extracted; the API does not provide source-document deletion.
 Evidence starts unreviewed, and only the candidate can explicitly confirm it.
+Job descriptions can be pasted and saved, tailored CV drafts generated and
+exported, and stored discovered jobs browsed (with an optional "posted in the
+last 24 hours" view). While an action runs, other action buttons are disabled,
+the pending action is named, and a second attempt shows a wait message.
 
-Run frontend tests and a production build with:
+Run frontend tests, a type check, and a production build with:
 
 ```powershell
 npm test
+npx tsc -b
 npm run build
 ```
+
+`npm run build` replaces the contents of `frontend/dist`. The frontend tests
+mock `fetch`; they do not exercise a real browser session, the API, or
+PostgreSQL. On 2026-10-17: backend 378 passed (`pytest -q`), frontend 59
+passed (`npm test`), `npx tsc -b` clean.
 
 The login flow requires the exact configured browser Origin, pre-login and
 session-bound CSRF tokens, and same-origin API requests through the existing

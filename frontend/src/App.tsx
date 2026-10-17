@@ -9,12 +9,18 @@ import {
   setUnauthorizedHandler,
 } from "./api/client";
 import type {
+  ApplicationStatus,
+  CandidateEligibilityInput,
   CandidateProfile,
   CandidateProfileInput,
   CertificationInput,
   EducationInput,
+  EligibilityAssessmentInput,
   EvidenceStatus,
+  EvidenceSuggestions,
   ExportFormat,
+  JobApplicationDetails,
+  PreparedApplication,
   SkillInput,
   WorkExperienceInput,
   WorkspaceData,
@@ -30,16 +36,21 @@ import {
   ProfileView,
   type ViewName,
 } from "./Views";
+import { ApplicationsView } from "./ApplicationsView";
 import { DiscoveryView } from "./DiscoveryView";
+import { JobPipelineView } from "./JobPipelineView";
+import { EligibilityDetailsPanel } from "./EligibilityDetailsPanel";
 
 const navigation: { name: ViewName; label: string; icon: string }[] = [
   { name: "Dashboard", label: "Overview", icon: "⌂" },
   { name: "Profile", label: "Candidate profile", icon: "◎" },
   { name: "Documents", label: "Documents", icon: "▤" },
   { name: "Evidence review", label: "Evidence review", icon: "✓" },
+  { name: "Job pipeline", label: "Job pipeline", icon: "➜" },
   { name: "Job discovery", label: "Discovered jobs", icon: "⌕" },
   { name: "Job descriptions", label: "Job descriptions", icon: "▱" },
   { name: "Tailored CVs", label: "Tailored CVs", icon: "▧" },
+  { name: "Applications", label: "Applications", icon: "☰" },
   { name: "Exports", label: "Exports", icon: "⇩" },
 ];
 
@@ -54,6 +65,8 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [activeView, setActiveView] = useState<ViewName>("Dashboard");
+  // Job preselected on the Tailored CVs page after importing a listing.
+  const [cvJobId, setCvJobId] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [pendingLabel, setPendingLabel] = useState("");
@@ -196,7 +209,7 @@ export default function App() {
   // a second action is refused with visible feedback rather than dropped.
   async function runAction(
     action: () => Promise<unknown>,
-    success?: string,
+    success?: string | ((result: unknown) => string),
     pending = "Saving your changes…",
   ): Promise<boolean> {
     if (actionLock.current) {
@@ -209,12 +222,13 @@ export default function App() {
     setActionError("");
     setNotice("");
     try {
-      await action();
-      if (success) setNotice(success);
+      const result = await action();
+      // Report success only once the saved result is on screen.
       if (profileId) setData(await loadWorkspace(profileId));
+      if (success) setNotice(typeof success === "function" ? success(result) : success);
       return true;
     } catch (error) {
-      setActionError(errorMessage(error));
+      setActionError(shortMessage(error));
       if (profileId && !(error instanceof ApiError && error.status === 401)) {
         try {
           setData(await loadWorkspace(profileId));
@@ -241,8 +255,25 @@ export default function App() {
     await api.uploadDocument(profileId, file);
   }
 
-  async function extractDocument(documentId: string) {
-    await api.extractDocument(profileId, documentId);
+  // Successful extraction is followed by local evidence suggestions for review.
+  async function extractDocument(documentId: string): Promise<string> {
+    const extraction = await api.extractDocument(profileId, documentId);
+    if (extraction.status !== "succeeded") {
+      return `Text extraction finished: ${extraction.status.replace("_", " ")}. No evidence was suggested.`;
+    }
+    try {
+      return `Text extraction completed. ${suggestionSummary(await api.suggestEvidence(profileId, documentId))}`;
+    } catch (error) {
+      return `Text extraction completed. Evidence suggestions could not be created: ${errorMessage(error)}`;
+    }
+  }
+
+  async function suggestEvidence(documentId: string): Promise<string> {
+    return suggestionSummary(await api.suggestEvidence(profileId, documentId));
+  }
+
+  async function relinkEvidence(evidenceId: string, sourceExcerpt: string) {
+    await api.relinkEvidence(profileId, evidenceId, sourceExcerpt);
   }
 
   async function downloadDocument(documentId: string, filename: string) {
@@ -272,8 +303,75 @@ export default function App() {
     await api.createJob(profileId, payload);
   }
 
-  async function generateDraft(jobId: string) {
-    await api.generateDraft(profileId, jobId);
+  function generateDraft(jobId: string, sourceDocumentId?: string) {
+    return api.generateDraft(profileId, jobId, { sourceDocumentId });
+  }
+
+  function openTailoredCvs(jobId: string) {
+    setCvJobId(jobId);
+    setActiveView("Tailored CVs");
+  }
+
+  function createApplication(payload: { job_description_id: string; status: ApplicationStatus; applied_on?: string }) {
+    return runAction(
+      () => api.createApplication(profileId, payload),
+      "Application tracking started.",
+      "Starting to track the application…",
+    );
+  }
+
+  function updateApplication(applicationId: string, payload: JobApplicationDetails) {
+    return runAction(
+      () => api.updateApplication(profileId, applicationId, payload),
+      "Application details saved.",
+      "Saving application details…",
+    );
+  }
+
+  function changeApplicationStatus(applicationId: string, payload: { status: ApplicationStatus; applied_on?: string; note?: string }) {
+    return runAction(
+      () => api.changeApplicationStatus(profileId, applicationId, payload),
+      "Application stage updated.",
+      "Updating application stage…",
+    );
+  }
+
+  function confirmEligibility(payload: CandidateEligibilityInput) {
+    return runAction(
+      () => api.confirmEligibilityDetails(profileId, payload),
+      "Work eligibility details confirmed.",
+      "Saving your work eligibility details…",
+    );
+  }
+
+  function recordEligibility(listingId: string, payload: EligibilityAssessmentInput) {
+    return runAction(
+      () => api.recordEligibility(listingId, payload),
+      "Eligibility review recorded.",
+      "Recording eligibility review…",
+    );
+  }
+
+  function prepareCvFromListing(listingId: string) {
+    return runAction(async () => {
+      const job = await api.importJobFromListing(profileId, listingId);
+      openTailoredCvs(job.id);
+    }, "Job description imported from the listing. Review it, then generate a tailored CV.", "Importing job description…");
+  }
+
+  // Prepares (never submits) an application; the pack is shown on the pipeline card.
+  async function prepareFromPipeline(listingId: string): Promise<PreparedApplication | null> {
+    let pack: PreparedApplication | null = null;
+    await runAction(async () => {
+      pack = await api.prepareApplication(profileId, listingId);
+      return pack;
+    }, (result) => {
+      const prepared = result as PreparedApplication;
+      return prepared.cv_draft_status === "generated"
+        ? "Application prepared, not submitted. Review the CV draft, then submit on the official page."
+        : "Application prepared, not submitted. The CV draft needs more confirmed evidence before export.";
+    }, "Preparing application…");
+    return pack;
   }
 
   async function createExport(jobId: string, draftId: string, format: ExportFormat) {
@@ -303,7 +401,7 @@ export default function App() {
   const view = (() => {
     switch (activeView) {
       case "Profile":
-        return <ProfileView
+        return <div className="view-stack"><ProfileView
           data={data}
           onSave={saveProfile}
           onCreateExperience={(payload: WorkExperienceInput) => api.createExperience(profileId, payload)}
@@ -320,17 +418,21 @@ export default function App() {
           onDeleteCertification={(id: string) => api.deleteCertification(profileId, id)}
           busy={busy}
           runAction={runAction}
-        />;
+        /><EligibilityDetailsPanel busy={busy} details={data.eligibilityDetails} key={data.eligibilityDetails.confirmed_at || "not-confirmed"} onConfirm={confirmEligibility} profileLocation={data.profile.location} /></div>;
       case "Documents":
-        return <DocumentsView data={data} onUpload={uploadDocument} onExtract={extractDocument} onDownload={downloadDocument} onGetText={(id) => api.getExtractedText(profileId, id)} busy={busy} runAction={runAction} />;
+        return <DocumentsView data={data} onUpload={uploadDocument} onExtract={extractDocument} onSuggest={suggestEvidence} onDownload={downloadDocument} onGetText={(id) => api.getExtractedText(profileId, id)} busy={busy} runAction={runAction} />;
       case "Evidence review":
-        return <EvidenceView data={data} onGetText={(id) => api.getExtractedText(profileId, id)} onCreate={createEvidence} onSetStatus={setEvidenceStatus} busy={busy} runAction={runAction} />;
+        return <EvidenceView data={data} onGetText={(id) => api.getExtractedText(profileId, id)} onCreate={createEvidence} onSetStatus={setEvidenceStatus} onRelink={relinkEvidence} busy={busy} runAction={runAction} />;
+      case "Job pipeline":
+        return <JobPipelineView busy={busy} onOpenCv={openTailoredCvs} onPrepare={prepareFromPipeline} profileId={profileId} />;
       case "Job discovery":
-        return <DiscoveryView />;
+        return <DiscoveryView busy={busy} importedJobs={data.jobs} onOpenCv={openTailoredCvs} onPrepareCv={prepareCvFromListing} onRecordEligibility={recordEligibility} />;
       case "Job descriptions":
         return <JobsView jobs={data.jobs} onCreate={createJob} busy={busy} runAction={runAction} />;
       case "Tailored CVs":
-        return <DraftsView data={data} onGenerate={generateDraft} onCreateExport={createExport} onDownloadExport={downloadExport} busy={busy} runAction={runAction} />;
+        return <DraftsView data={data} initialJobId={cvJobId} onGenerate={generateDraft} onCreateExport={createExport} onDownloadExport={downloadExport} busy={busy} runAction={runAction} />;
+      case "Applications":
+        return <ApplicationsView busy={busy} data={data} onChangeStatus={changeApplicationStatus} onCreate={createApplication} onUpdate={updateApplication} />;
       case "Exports":
         return <ExportsView data={data} onDownload={downloadExport} busy={busy} runAction={runAction} />;
       default:
@@ -496,17 +598,33 @@ function ProfileStart({ onSelect, error, onLogout }: {
   </main>;
 }
 
+function suggestionSummary(result: EvidenceSuggestions): string {
+  const added = result.created === 1 ? "1 evidence suggestion" : `${result.created} evidence suggestions`;
+  const skipped = result.skipped_existing ? ` ${result.skipped_existing} already recorded were left unchanged.` : "";
+  const limited = result.limited ? " The per-document limit was reached; add anything else manually." : "";
+  return result.created
+    ? `${added} added for your review in Evidence review. None are confirmed until you confirm them.${skipped}${limited}`
+    : `No new evidence suggestions.${skipped}${limited}`;
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.detail && typeof error.detail === "object") {
       const body = error.detail as { detail?: unknown };
       if (body.detail && typeof body.detail === "object") {
         const detail = body.detail as { validation_results?: { errors?: string[]; gaps?: string[] } };
-        const messages = [...(detail.validation_results?.errors || []), ...(detail.validation_results?.gaps || [])];
-        if (messages.length) return `${error.message} ${messages.join(" ")}`;
+        const count = (detail.validation_results?.errors || []).length;
+        // The full report belongs on the page, beside the draft, not in a notification.
+        if (detail.validation_results) return `${error.message} ${count} issue${count === 1 ? " is" : "s are"} listed under the draft in Tailored CVs.`;
       }
     }
     return error.message;
   }
   return error instanceof Error ? error.message : "An unexpected error occurred.";
+}
+
+// Notifications stay short enough to read and to close; details live on the page.
+function shortMessage(error: unknown): string {
+  const message = errorMessage(error);
+  return message.length > 400 ? `${message.slice(0, 397)}…` : message;
 }

@@ -12,8 +12,11 @@ from app.schemas.candidate_evidence import (
     CandidateEvidenceCreate,
     CandidateEvidenceRead,
     CandidateEvidenceUpdate,
+    EvidenceSuggestionsRead,
 )
 from app.services.documents import is_candidate_source_document
+from app.services.evidence_integrity import is_current, mark_currency
+from app.services.evidence_suggestions import new_evidence_for
 from app.services.extraction import MAX_EXTRACTED_CHARACTERS
 
 router = APIRouter(
@@ -40,6 +43,30 @@ def _get_evidence_or_404(
             detail="Candidate evidence not found",
         )
     return evidence
+
+
+def _get_source_document_or_404(
+    profile_id: UUID,
+    document_id: UUID,
+    session: DatabaseSession,
+) -> CandidateDocument:
+    document = session.scalar(
+        select(CandidateDocument).where(
+            CandidateDocument.id == document_id,
+            CandidateDocument.candidate_profile_id == profile_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source document not found for candidate profile",
+        )
+    if not is_candidate_source_document(document.document_kind, document.provenance):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Evidence can only come from candidate-uploaded source documents",
+        )
+    return document
 
 
 def _get_usable_extraction(
@@ -114,12 +141,60 @@ def list_candidate_evidence(
     session: DatabaseSession,
 ) -> list[CandidateEvidence]:
     get_profile_or_404(session, profile_id)
-    return list(
+    # Records created together share created_at; the tie-breakers keep the order
+    # fixed when one is updated (PostgreSQL may otherwise return ties in a new order).
+    return mark_currency(session, list(
         session.scalars(
             select(CandidateEvidence)
             .where(CandidateEvidence.candidate_profile_id == profile_id)
-            .order_by(CandidateEvidence.created_at.desc())
+            .order_by(
+                CandidateEvidence.created_at.desc(),
+                CandidateEvidence.source_document_id,
+                CandidateEvidence.source_start,
+                CandidateEvidence.id,
+            )
         )
+    ))
+
+
+@router.post(
+    "/{profile_id}/documents/{document_id}/evidence-suggestions",
+    response_model=EvidenceSuggestionsRead,
+)
+def create_evidence_suggestions(
+    profile_id: UUID,
+    document_id: UUID,
+    session: DatabaseSession,
+) -> EvidenceSuggestionsRead:
+    """Suggest unreviewed, source-linked evidence from the document's current text.
+
+    Runs locally with deterministic rules. Excerpts that already have evidence
+    for this document (in any review state) are skipped, so repeating the
+    request never duplicates a claim or brings back a rejected one.
+    """
+    get_profile_or_404(session, profile_id)
+    document = _get_source_document_or_404(profile_id, document_id, session)
+    extraction = _get_usable_extraction(document.id, session)
+    text = extraction.extracted_text or ""
+    if len(text) > MAX_EXTRACTED_CHARACTERS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Extracted text is outside the supported evidence size",
+        )
+    existing = list(session.scalars(select(CandidateEvidence).where(
+        CandidateEvidence.candidate_profile_id == profile_id,
+        CandidateEvidence.source_document_id == document.id,
+    )))
+    records, skipped, limited = new_evidence_for(profile_id, document.id, text, existing)
+    session.add_all(records)
+    session.commit()
+    for record in records:
+        session.refresh(record)
+    return EvidenceSuggestionsRead(
+        created=len(records),
+        skipped_existing=skipped,
+        limited=limited,
+        evidence=[CandidateEvidenceRead.model_validate(record) for record in mark_currency(session, records)],
     )
 
 
@@ -134,22 +209,7 @@ def create_candidate_evidence(
     session: DatabaseSession,
 ) -> CandidateEvidence:
     get_profile_or_404(session, profile_id)
-    document = session.scalar(
-        select(CandidateDocument).where(
-            CandidateDocument.id == payload.source_document_id,
-            CandidateDocument.candidate_profile_id == profile_id,
-        )
-    )
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Source document not found for candidate profile",
-        )
-    if not is_candidate_source_document(document.document_kind, document.provenance):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Evidence can only come from candidate-uploaded source documents",
-        )
+    document = _get_source_document_or_404(profile_id, payload.source_document_id, session)
     extraction = _get_usable_extraction(document.id, session)
     excerpt, start, end = _validate_and_locate_source(
         text=extraction.extracted_text or "",
@@ -184,7 +244,7 @@ def read_candidate_evidence(
     session: DatabaseSession,
 ) -> CandidateEvidence:
     get_profile_or_404(session, profile_id)
-    return _get_evidence_or_404(profile_id, evidence_id, session)
+    return mark_currency(session, [_get_evidence_or_404(profile_id, evidence_id, session)])[0]
 
 
 @router.patch(
@@ -224,9 +284,21 @@ def update_candidate_evidence(
         )
     for field_name, value in changes.items():
         setattr(evidence, field_name, value)
+    if (
+        changes.get("confirmation_status") == "candidate_confirmed"
+        and not is_current(evidence, extraction.extracted_text)
+    ):
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "The source text changed since this evidence was recorded. "
+                "Re-link it to the current text before confirming it."
+            ),
+        )
     session.commit()
     session.refresh(evidence)
-    return evidence
+    return mark_currency(session, [evidence])[0]
 
 
 @router.delete(

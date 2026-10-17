@@ -51,11 +51,16 @@ class SourceListing:
     salary_max: Decimal | None = None
     salary_currency: str | None = None
     salary_period: str | None = None
+    # The public vacancy page, when the source states one separately from the
+    # application form. Kept distinct: a working page does not prove a working form.
+    listing_url: str | None = None
 
 
 class JobSource(Protocol):
     kind: str
     key: str
+    # Optional: complete_snapshot = False for feeds that show only a recent window
+    # (aggregators). Their absent listings are never marked missing_from_source.
 
     def fetch(self) -> list[SourceListing]:
         """Return every listing currently published, or raise SourceFetchError."""
@@ -78,6 +83,7 @@ def dedupe_key(employer_name: str, title: str, location_text: str | None) -> str
 def content_hash(listing: SourceListing) -> str:
     payload = {
         "application_url": listing.application_url,
+        "listing_url": listing.listing_url,
         "employer_name": listing.employer_name,
         "title": listing.title,
         "description_text": listing.description_text,
@@ -92,24 +98,40 @@ def content_hash(listing: SourceListing) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def invalid_reason(listing: SourceListing) -> str | None:
+    """Why a source entry cannot be stored, or None when it is usable."""
+    if not _clean(listing.source_listing_id):
+        return "missing source listing id"
+    if not _clean(listing.title):
+        return "missing title"
+    if not _clean(listing.employer_name):
+        return "missing employer name"
+    if not listing.application_url.startswith("https://") or len(listing.application_url) > MAX_URL_LENGTH:
+        return "no usable https application URL"
+    if listing.listing_url is not None and (
+        not listing.listing_url.startswith("https://") or len(listing.listing_url) > MAX_URL_LENGTH
+    ):
+        return "listing URL is not a usable https URL"
+    if len(listing.source_url) > MAX_URL_LENGTH:
+        return "source URL too long"
+    if len(_clean(listing.title)) > MAX_TITLE_LENGTH or len(_clean(listing.employer_name)) > MAX_EMPLOYER_LENGTH:
+        return "title or employer name too long"
+    if len(_clean(listing.location_text)) > MAX_LOCATION_LENGTH:
+        return "location text too long"
+    if listing.stated_workplace_type not in (None, "remote", "hybrid", "onsite"):
+        return "unrecognised workplace type"
+    if not (listing.salary_min is None and listing.salary_max is None or listing.salary_currency):
+        return "salary without currency"
+    return None
+
+
 def _is_valid(listing: SourceListing) -> bool:
-    return bool(
-        _clean(listing.source_listing_id)
-        and _clean(listing.title)
-        and _clean(listing.employer_name)
-        and listing.application_url.startswith("https://")
-        and len(listing.application_url) <= MAX_URL_LENGTH
-        and len(listing.source_url) <= MAX_URL_LENGTH
-        and len(_clean(listing.title)) <= MAX_TITLE_LENGTH
-        and len(_clean(listing.employer_name)) <= MAX_EMPLOYER_LENGTH
-        and len(_clean(listing.location_text)) <= MAX_LOCATION_LENGTH
-        and listing.stated_workplace_type in (None, "remote", "hybrid", "onsite")
-        and (listing.salary_min is None and listing.salary_max is None or listing.salary_currency)
-    )
+    return invalid_reason(listing) is None
 
 
 def _apply_facts(row: JobListing, listing: SourceListing, digest: str) -> None:
     row.source_url = listing.source_url
+    row.listing_url = listing.listing_url
     row.application_url = listing.application_url
     row.employer_name = _clean(listing.employer_name)
     row.title = _clean(listing.title)
@@ -173,6 +195,7 @@ def _reconcile(
 ) -> JobDiscoveryRun:
     seen_ids: set[str] = set()
     created = updated = unchanged = skipped = 0
+    skip_reasons: dict[str, int] = {}
     existing = {
         row.source_listing_id: row
         for row in session.scalars(
@@ -183,8 +206,10 @@ def _reconcile(
     }
     for listing in fetched:
         listing_id = _clean(listing.source_listing_id)
-        if not _is_valid(listing) or listing_id in seen_ids:
+        reason = invalid_reason(listing) or ("duplicate in response" if listing_id in seen_ids else None)
+        if reason is not None:
             skipped += 1
+            skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
             continue
         seen_ids.add(listing_id)
         digest = content_hash(listing)
@@ -200,6 +225,7 @@ def _reconcile(
                 source_status="active",
             )
             _apply_facts(row, listing, digest)
+            row.source_category = getattr(source, "category", None)
             session.add(row)
             created += 1
             continue
@@ -208,12 +234,18 @@ def _reconcile(
             updated += 1
         else:
             unchanged += 1
+        if row.source_status == "missing_from_source":
+            # Resurfaced after the source had dropped it; the posting date is left as stated.
+            row.relisted_at = started
+        row.source_category = getattr(source, "category", None) or row.source_category
         row.last_seen_at = started
         row.last_verified_at = started
         row.source_status = "active"
 
     missing = 0
-    for listing_id, row in existing.items():
+    # A windowed feed (aggregators) dropping a job proves nothing about the vacancy.
+    complete = getattr(source, "complete_snapshot", True)
+    for listing_id, row in existing.items() if complete else ():
         if listing_id not in seen_ids and row.source_status != "missing_from_source":
             row.source_status = "missing_from_source"
             row.last_verified_at = started
@@ -226,6 +258,7 @@ def _reconcile(
     run.unchanged_count = unchanged
     run.missing_count = missing
     run.skipped_count = skipped
+    run.skip_reasons = skip_reasons
     run.finished_at = utc_now() if now is None else now
     session.commit()
     return run

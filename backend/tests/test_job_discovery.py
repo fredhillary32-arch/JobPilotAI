@@ -160,6 +160,35 @@ def test_default_fetch_classifies_source_failures(monkeypatch, error, category) 
     assert caught.value.category == category
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.example/v1/boards/x/jobs",
+        "http://boards-api.greenhouse.io/v1/boards/x/jobs",
+        "https://boards-api.greenhouse.io.evil.example/jobs",
+    ],
+)
+def test_redirects_away_from_the_greenhouse_api_host_are_refused(target: str) -> None:
+    from urllib.request import Request
+
+    handler = greenhouse.GreenhouseOnlyRedirectHandler()
+    original = Request("https://boards-api.greenhouse.io/v1/boards/x/jobs")
+    with pytest.raises(SourceFetchError) as caught:
+        handler.redirect_request(original, None, 302, "Found", {}, target)
+    assert caught.value.category == "invalid_response"
+
+
+def test_redirects_within_the_greenhouse_api_host_are_followed() -> None:
+    from urllib.request import Request
+
+    handler = greenhouse.GreenhouseOnlyRedirectHandler()
+    original = Request("https://boards-api.greenhouse.io/v1/boards/x/jobs")
+    followed = handler.redirect_request(
+        original, None, 301, "Moved", {}, "https://boards-api.greenhouse.io/v1/boards/y/jobs"
+    )
+    assert followed.full_url == "https://boards-api.greenhouse.io/v1/boards/y/jobs"
+
+
 def test_default_fetch_rejects_oversized_responses(monkeypatch) -> None:
     class Response:
         def __enter__(self):
@@ -372,14 +401,15 @@ def test_api_lists_active_listings_with_unknown_eligibility(api_client: TestClie
     assert body["total"] == 2 and body["limit"] == 50 and body["offset"] == 0
     first = body["items"][0]
     assert first["source_listing_id"] == "1"  # dated listings sort first
-    assert first["eligibility"]["status"] == "unknown"
+    assert first["eligibility"]["status"] == "eligibility_unknown"
+    assert first["eligibility"]["currency"] == "not_assessed"
     assert "description_text" not in first
     assert body["items"][1]["posted_at"] is None
 
 
-def test_api_posted_within_filter_excludes_undated_and_old_listings(api_client: TestClient, database) -> None:
+def test_api_posted_within_filter_excludes_undated_old_and_future_listings(api_client: TestClient, database) -> None:
     _, factory = database
-    _seed(factory, [(1, 2), (2, 48), (3, None)])
+    _seed(factory, [(1, 2), (2, 48), (3, None), (4, -3)])
 
     ids = [i["source_listing_id"] for i in api_client.get(f"{API}/job-listings?posted_within_hours=24").json()["items"]]
     assert ids == ["1"]

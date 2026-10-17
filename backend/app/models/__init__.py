@@ -9,6 +9,7 @@ from app.models.candidate_profile import (
     CandidateWorkExperience,
 )
 from app.models.candidate_document import CandidateDocument
+from app.models.candidate_eligibility import CandidateEligibilityDetails, CandidateWorkAuthorization
 from app.models.candidate_evidence import CandidateEvidence
 from app.models.document_extraction import DocumentExtraction
 from app.models.cv_generation import (
@@ -16,7 +17,10 @@ from app.models.cv_generation import (
     TailoredCvDraft,
     TailoredCvExport,
 )
-from app.models.job_listing import JobDiscoveryRun, JobListing
+from app.models.eligibility import ListingEligibilityAssessment
+from app.models.job_application import JobApplication, JobApplicationEvent
+from app.models.job_listing import JobDiscoveryRun, JobListing, JobListingLinkCheck
+from app.models.skill_confirmation import CandidateSkillConfirmation
 from app.models.user import (
     AuthSession,
     PreAuthChallenge,
@@ -26,14 +30,21 @@ from app.models.user import (
 
 __all__ = [
     "Base",
+    "CandidateSkillConfirmation",
     "CandidateDocument",
+    "CandidateEligibilityDetails",
+    "CandidateWorkAuthorization",
     "CandidateEvidence",
     "DocumentExtraction",
     "CandidateJobDescription",
     "TailoredCvDraft",
     "TailoredCvExport",
+    "JobApplication",
+    "JobApplicationEvent",
+    "ListingEligibilityAssessment",
     "JobDiscoveryRun",
     "JobListing",
+    "JobListingLinkCheck",
     "AuthSession",
     "PreAuthChallenge",
     "ProfileOwnershipAdoption",

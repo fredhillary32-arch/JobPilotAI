@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    CandidateCertification,
     CandidateDocument,
     CandidateEducation,
     CandidateEvidence,
@@ -38,9 +39,12 @@ from app.models import (
     TailoredCvDraft,
     TailoredCvExport,
 )
+from app.models.skill_confirmation import CLAIMABLE_RESPONSES, CandidateSkillConfirmation
 from app.schemas.cv_generation import CVSourceReference, CVStructuredContent
 from app.services.cv_generation import render_cv
 from app.services.cv_validation import validate_cv_content
+from app.services.cv_export_checks import verify_export
+from app.services.evidence_integrity import current_texts, is_current
 from app.services.documents import DocumentStorage, DocumentStorageError
 
 ExportFormat = Literal["pdf", "docx"]
@@ -127,6 +131,16 @@ def _assert_reference_matches(
                     value = None
             else:
                 value = values.get(reference.source_field)
+    elif reference.source_type == "certification":
+        item = session.get(CandidateCertification, UUID(reference.source_id))
+        if item is None or item.candidate_profile_id != profile.id:
+            value = None
+        else:
+            value = {
+                "name": item.name,
+                "issuer": item.issuer,
+                "issue_date": item.issue_date.isoformat(),
+            }.get(reference.source_field)
     elif reference.source_type == "education":
         item = session.get(CandidateEducation, UUID(reference.source_id))
         if item is None or item.candidate_profile_id != profile.id:
@@ -140,6 +154,13 @@ def _assert_reference_matches(
                 "end_date": item.end_date.isoformat() if item.end_date else None,
             }
             value = values.get(reference.source_field)
+    elif reference.source_type == "skill_confirmation":
+        # The candidate's own statement: it must still be active and say the same thing.
+        item = session.get(CandidateSkillConfirmation, UUID(reference.source_id))
+        if item is None or item.candidate_profile_id != profile.id or item.status != "active"                 or item.response not in CLAIMABLE_RESPONSES:
+            value = None
+        else:
+            value = {"skill_name": item.skill_name, "example": item.example}.get(reference.source_field)
     else:
         item = session.get(CandidateEvidence, UUID(reference.source_id))
         if (
@@ -151,6 +172,8 @@ def _assert_reference_matches(
             or reference.source_excerpt != item.source_excerpt
             or reference.source_start != item.source_start
             or reference.source_end != item.source_end
+            # The excerpt must still be in the document's current extracted text.
+            or not is_current(item, current_texts(session, [item.source_document_id])[item.source_document_id])
         ):
             value = None
         else:
@@ -167,10 +190,12 @@ def validate_saved_draft(
     session: Session,
     profile_id: UUID,
     draft: TailoredCvDraft,
+    *,
+    for_approval: bool = False,
 ) -> tuple[CVStructuredContent, str]:
     if draft.candidate_profile_id != profile_id:
         raise InvalidDraftForExport("CV draft does not belong to this candidate profile.")
-    if draft.status != "generated" or not draft.generated_content or not draft.structured_content:
+    if draft.status not in {"generated", "needs_review"} or not draft.generated_content or not draft.structured_content:
         raise InvalidDraftForExport("Only successfully generated CV drafts can be exported.")
     validation_results = draft.validation_results
     if (
@@ -189,6 +214,13 @@ def validate_saved_draft(
     except (TypeError, ValueError) as exc:
         raise InvalidDraftForExport("The saved CV draft has invalid structured content.") from exc
 
+    if draft.status == "needs_review" and not for_approval and not (
+        content.review and content.review.approval_status == "approved" and content.review.acknowledged_incomplete
+    ):
+        raise InvalidDraftForExport(
+            "This draft is incomplete. Add the missing evidence and generate it again, "
+            "or approve it explicitly as incomplete before exporting."
+        )
     rendered = render_cv(content)
     errors = validate_cv_content(content, rendered)
     if errors or rendered != draft.generated_content:
@@ -295,6 +327,8 @@ def render_pdf(content: CVStructuredContent) -> RenderedCv:
         Paragraph(_paragraph_text(content.candidate_name), name_style),
         Paragraph(_paragraph_text(content.professional_heading), subheading),
     ]
+    if content.contact_details:
+        story.append(Paragraph(_paragraph_text(content.contact_details), subheading))
     for section in content.sections:
         story.append(Paragraph(_paragraph_text(section.heading), heading))
         if section.heading == "Professional Experience":
@@ -372,6 +406,14 @@ def render_docx(content: CVStructuredContent) -> RenderedCv:
     heading_run.font.size = Pt(10.5)
     heading_run.font.color.rgb = RGBColor(0, 0, 0)
 
+    if content.contact_details:
+        contact = document.add_paragraph()
+        contact.paragraph_format.space_after = Pt(6)
+        contact_run = contact.add_run(content.contact_details)
+        contact_run.font.name = "Calibri"
+        contact_run.font.size = Pt(10)
+        contact_run.font.color.rgb = RGBColor(0, 0, 0)
+
     for cv_section in content.sections:
         section_heading = document.add_paragraph()
         section_heading.paragraph_format.keep_with_next = True
@@ -432,7 +474,16 @@ def create_cv_export(
     export_format: ExportFormat,
 ) -> TailoredCvExport:
     content, rendered_text = validate_saved_draft(session, profile_id, draft)
+    review = content.review
+    if review is not None and review.approval_status != "approved":
+        raise InvalidDraftForExport("Review the changes and approve this draft before exporting it.")
     rendered = render_cv_export(content, export_format)
+    # The file must read back as the approved text before it is stored.
+    verification = verify_export(rendered.content, export_format, rendered_text)
+    if not verification["ok"]:
+        raise InvalidDraftForExport(
+            "The exported file did not read back as the approved draft, so it was not saved."
+        )
     export_id = uuid4()
     extension = export_format
     filename = f"jobpilot-cv-{export_id.hex}.{extension}"
@@ -466,6 +517,7 @@ def create_cv_export(
         session.add(export)
         session.commit()
         session.refresh(export)
+        export.verification = verification  # reported once, on creation
         return export
     except Exception:
         session.rollback()

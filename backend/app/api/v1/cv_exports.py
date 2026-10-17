@@ -102,6 +102,7 @@ def _export_response(export: TailoredCvExport) -> TailoredCvExportRead:
         media_type=document.media_type,
         size_bytes=document.size_bytes,
         created_at=export.created_at,
+        verification=getattr(export, "verification", None),
     )
 
 
@@ -138,8 +139,11 @@ def create_tailored_cv_export(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="CV export storage is unavailable",
         ) from exc
+    verification = getattr(result, "verification", None)
     result.document = session.get(CandidateDocument, result.document_id)
-    return _export_response(result)
+    response = _export_response(result)
+    response.verification = verification
+    return response
 
 
 @router.get(

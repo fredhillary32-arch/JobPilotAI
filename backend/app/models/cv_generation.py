@@ -19,7 +19,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
-CvDraftStatus = Literal["generated", "failed"]
+# "needs_review": the content is sound but incomplete (for example a role with fewer
+# than five supported bullets); it is saved for review and exported only after the
+# candidate explicitly approves it as incomplete.
+CvDraftStatus = Literal["generated", "needs_review", "failed"]
 
 
 class CandidateJobDescription(Base):
@@ -31,6 +34,12 @@ class CandidateJobDescription(Base):
             name="ck_job_description_description",
         ),
         UniqueConstraint("id", "candidate_profile_id", name="uq_job_description_profile"),
+        # A profile imports a discovered listing at most once; pasted jobs have no link.
+        UniqueConstraint(
+            "candidate_profile_id",
+            "source_job_listing_id",
+            name="uq_job_description_profile_listing",
+        ),
         Index(
             "ix_job_descriptions_profile_created",
             "candidate_profile_id",
@@ -48,6 +57,15 @@ class CandidateJobDescription(Base):
     company: Mapped[str | None] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, nullable=False)
     source_url: Mapped[str | None] = mapped_column(String(2048))
+    # Set only when the description was imported from a stored discovered listing.
+    source_job_listing_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "job_listings.id",
+            ondelete="SET NULL",
+            name="fk_job_description_source_listing",
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -77,11 +95,11 @@ class TailoredCvDraft(Base):
             name="fk_cv_draft_job_profile",
         ),
         CheckConstraint(
-            "status IN ('generated', 'failed')",
+            "status IN ('generated', 'needs_review', 'failed')",
             name="ck_cv_draft_status",
         ),
         CheckConstraint(
-            "(status = 'generated' AND generated_content IS NOT NULL "
+            "(status IN ('generated', 'needs_review') AND generated_content IS NOT NULL "
             "AND structured_content IS NOT NULL) OR "
             "(status = 'failed' AND generated_content IS NULL "
             "AND structured_content IS NULL)",

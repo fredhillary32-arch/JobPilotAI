@@ -400,6 +400,49 @@ def test_login_rate_limit_blocks_after_five_failed_attempts(auth_client) -> None
     assert throttled.json() == {"detail": "Too many login attempts. Try again later."}
 
 
+def test_one_accounts_failures_do_not_lock_out_another_account_on_the_same_client(auth_client) -> None:
+    client, factory = auth_client
+    with factory.begin() as session:
+        session.add(User(email="colleague@example.com", password_hash=hash_password("another long passphrase")))
+    for _ in range(5):
+        assert _login(client, "owner@example.com", "incorrect but long password").status_code == 401
+    assert _login(client, "owner@example.com", "incorrect but long password").status_code == 429
+
+    other = _login(client, "colleague@example.com", "another long passphrase")
+
+    assert other.status_code == 200
+
+
+def test_email_variants_share_one_failure_count(auth_client) -> None:
+    client, _ = auth_client
+    for variant in ["owner@example.com", "Owner@Example.com", " owner@example.com ", "OWNER@EXAMPLE.COM", "owner@example.com"]:
+        assert _login(client, variant, "incorrect but long password").status_code == 401
+
+    assert _login(client, "Owner@example.com", "incorrect but long password").status_code == 429
+
+
+def test_successful_sign_in_clears_that_accounts_failures(auth_client) -> None:
+    client, factory = auth_client
+    password = _create_user(factory)
+    for _ in range(4):
+        assert _login(client, "owner@example.com", "incorrect but long password").status_code == 401
+    assert _login(client, "owner@example.com", password).status_code == 200
+
+    for _ in range(5):
+        assert _login(client, "owner@example.com", "incorrect but long password").status_code == 401
+    assert _login(client, "owner@example.com", "incorrect but long password").status_code == 429
+
+
+def test_guessing_across_many_accounts_from_one_client_is_capped(auth_client) -> None:
+    client, _ = auth_client
+    for index in range(50):
+        assert _login(client, f"guess{index}@example.com", "incorrect but long password").status_code == 401
+
+    capped = _login(client, "fresh-account@example.com", "incorrect but long password")
+
+    assert capped.status_code == 429
+
+
 def test_login_request_validation_does_not_echo_password(auth_client) -> None:
     client, _ = auth_client
     secret_input = {"email": "owner@example.com", "password": {"private": "sentinel"}}

@@ -90,3 +90,13 @@ class CandidateEvidenceRead(BaseModel):
     confirmation_status: EvidenceConfirmationStatus
     created_at: datetime
     updated_at: datetime
+    # False when the document's current extracted text no longer has this excerpt
+    # at these offsets (for example after a failed or changed re-extraction).
+    source_current: bool = True
+
+
+class EvidenceSuggestionsRead(BaseModel):
+    created: int
+    skipped_existing: int
+    limited: bool
+    evidence: list[CandidateEvidenceRead]

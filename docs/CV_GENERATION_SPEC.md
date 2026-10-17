@@ -27,15 +27,44 @@ order is:
 5. Professional Experience
 6. Education
 
-Every included professional experience must have exactly five substantive
-bullets. If the available attributable content cannot support five distinct,
-specific claims for a role, fail generation and identify the role and the need
-for additional candidate-confirmed evidence. Never use generic duties to fill
-the quota.
+Each included role aims for five substantive bullets. This is a layout target,
+not a reason to fail: when the attributable content supports fewer distinct,
+specific claims, the draft is saved with status `needs_review`, keeps only the
+supported bullets, and lists an actionable issue naming the role. Never use
+generic duties, job-advert wording or invented achievements to fill the target.
+
+Validation has two parts:
+
+- Integrity errors fail a draft (status `failed`, no content): a claim without a
+  source, a non-substantive or duplicate bullet, more than five bullets, the
+  wrong section order, prohibited characters.
+- Completeness issues (fewer than five bullets, no headline, no summary, no
+  roles) give a `needs_review` draft with grouped issues
+  (`profile_evidence`, `experience_evidence`). It can be exported only after the
+  candidate approves it explicitly as incomplete (`acknowledge_incomplete`).
 
 Generated text must not use em dashes or ampersands. Write “and” instead.
 Preserve candidate wording rather than inventing metrics, outcomes, employers,
 dates, qualifications, skills, tools, methods, or responsibilities.
+
+## Candidate answers about skills
+
+For each requirement of a saved job the candidate can answer: they have the
+skill, they used it in a recorded role or a project (with an example in their own
+words), they have it but will add details later, they do not have it, or they
+are not sure. Answers are stored in `candidate_skill_confirmations` with
+provenance `candidate_confirmed`; they are never shown as independently
+verified. Confirmed skills relevant to the job may appear in Core Skills or
+Tools and Platforms (never work-style traits); an example for a recorded role
+may become a bullet for that role under the same no-new-words rule. "Do not
+have" and "not sure" answers never appear on a CV. Answers can be edited or
+withdrawn; withdrawn answers are kept for history and never used, and an export
+re-checks that every confirmation it relies on is still active and unchanged.
+
+Requirement analysis keeps context about the team ("How we work together") out
+of requirements, lists personal qualities and work style for interview
+preparation without scoring them, ignores filler words as keywords, and gives
+each requirement a stable key derived from its wording.
 
 ## Trust, matching, and traceability
 
@@ -73,7 +102,8 @@ local-only:
 The saved draft retains a readable plain-text representation and structured
 claims. PDF and DOCX exports use the same six-section order and a clean,
 single-column layout with black headings and ordinary bullet points. Every
-included role retains exactly five substantive, traceable bullets. Export
+bullet is substantive and traceable; a role with fewer than five is exported
+only from a draft approved as incomplete. Export
 validates the saved validation result and rechecks its source references;
 failed or subsequently invalid drafts are not exported.
 

@@ -24,3 +24,5 @@ class TailoredCvExportRead(BaseModel):
     media_type: str
     size_bytes: int
     created_at: datetime
+    # Read-back check of the produced file; present only in the creation response.
+    verification: dict | None = None

@@ -13,6 +13,7 @@ from app.models import (
     CandidateProfile,
     CandidateSkill,
     CandidateWorkExperience,
+    DocumentExtraction,
 )
 from app.schemas.cv_generation import CVStructuredContent
 from app.services.cv_validation import EXPECTED_SECTION_ORDER, validate_cv_content
@@ -130,6 +131,11 @@ def create_source_evidence(
         )
         session.add(document)
         session.flush()
+        # Evidence is only usable while its excerpt is in the current extraction.
+        session.add(DocumentExtraction(
+            source_document_id=document.id, status="succeeded", extracted_text="cv\n!",
+            character_count=4, extractor_version="stdlib/stdlib",
+        ))
         evidence = CandidateEvidence(
             candidate_profile_id=UUID(profile_id),
             source_document_id=document.id,
@@ -219,11 +225,14 @@ def test_unreviewed_and_rejected_evidence_cannot_be_used(
         f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
         f"{job['id']}/cv-drafts"
     )
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert "needs five substantive supported bullets" in str(detail)
+    # Three supported bullets: saved as incomplete; the unreviewed and rejected evidence is never used.
+    assert response.status_code == 201
+    detail = response.json()
+    assert detail["status"] == "needs_review"
+    assert any("3 supported bullets" in issue["message"] for issue in detail["validation_results"]["issues"])
     assert str(unreviewed_id) not in str(detail)
     assert str(rejected_id) not in str(detail)
+    assert unreviewed not in detail["generated_content"] and rejected not in detail["generated_content"]
     with database[1]() as session:
         assert session.get(CandidateEvidence, unreviewed_id).confirmation_status == "unreviewed"
         assert session.get(CandidateEvidence, rejected_id).confirmation_status == "rejected"
@@ -321,13 +330,16 @@ def test_insufficient_evidence_returns_actionable_role_error_and_no_content(
         f"{job['id']}/cv-drafts"
     )
 
-    assert response.status_code == 422
-    assert "Platform Engineer at Northstar Systems" in str(response.json()["detail"])
-    drafts = api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/cv-drafts"
-    ).json()
-    assert drafts[0]["generated_content"] is None
-    assert drafts[0]["structured_content"] is None
+    # Missing evidence is an actionable issue on a saved, incomplete draft, not a dead end.
+    assert response.status_code == 201
+    draft = response.json()
+    assert draft["status"] == "needs_review" and draft["validation_results"]["is_valid"] is True
+    (issue,) = draft["validation_results"]["issues"]
+    assert issue["group"] == "experience_evidence" and issue["role"] == "Platform Engineer at Northstar Systems"
+    assert "2 supported bullets" in issue["message"] and "will not invent" in issue["action"]
+    role = next(section for section in draft["structured_content"]["sections"] if section["heading"] == "Professional Experience")["roles"][0]
+    # Only the two supported bullets: nothing was added to reach five.
+    assert len(role["bullets"]) == 2
 
 
 def test_multiple_drafts_preserve_profile_and_original_uploaded_document(
