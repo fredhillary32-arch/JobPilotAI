@@ -171,8 +171,7 @@ def list_tailored_cv_exports(
 
 
 @router.get(
-    "/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports/"
-    "{export_id}/download",
+    "/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports/{export_id}/download",
     response_class=FileResponse,
     response_model=None,
 )
@@ -196,8 +195,7 @@ def download_tailored_cv_export(
     expected_media_type = (
         "application/pdf"
         if export.export_format == "pdf"
-        else "application/vnd.openxmlformats-officedocument."
-        "wordprocessingml.document"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     if (
         document.document_kind != "tailored_cv"

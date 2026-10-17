@@ -9,15 +9,22 @@ from app.schemas.job_listing import EligibilityStatus
 
 class FitSource(BaseModel):
     source_type: Literal[
-        "skill", "certification", "work_experience", "education", "evidence",
-        "eligibility_details", "work_authorization",
+        "skill",
+        "certification",
+        "work_experience",
+        "education",
+        "evidence",
+        "eligibility_details",
+        "work_authorization",
     ]
     source_id: str
     label: str
 
 
 class FitItem(BaseModel):
-    kind: Literal["skill", "work_authorization", "location", "relocation", "schedule", "contradiction", "work_arrangement"]
+    kind: Literal[
+        "skill", "work_authorization", "location", "relocation", "schedule", "contradiction", "work_arrangement"
+    ]
     requirement: str
     status: Literal["met", "missing", "uncertain", "disqualifier", "mismatch"]
     explanation: str

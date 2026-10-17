@@ -1,11 +1,14 @@
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate_document import CandidateDocument
 
 ExtractionStatus = Literal["succeeded", "no_text", "failed"]
 ExtractionErrorCategory = Literal[
@@ -66,6 +69,4 @@ class DocumentExtraction(Base):
         server_default=func.now(),
     )
 
-    source_document: Mapped["CandidateDocument"] = relationship(
-        back_populates="extraction"
-    )
+    source_document: Mapped["CandidateDocument"] = relationship(back_populates="extraction")

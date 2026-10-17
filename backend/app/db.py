@@ -57,9 +57,7 @@ def get_db_session() -> Generator[Session, None, None]:
 def check_database_connection() -> None:
     with get_engine().connect() as connection:
         connection.execute(text("SELECT 1"))
-        revisions = frozenset(
-            connection.execute(text("SELECT version_num FROM alembic_version")).scalars()
-        )
+        revisions = frozenset(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
     if revisions != get_expected_schema_heads():
         raise DatabaseSchemaNotCurrentError("Database schema revision is not current.")
 

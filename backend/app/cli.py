@@ -1,8 +1,9 @@
 import argparse
 import getpass
 import hmac
-from collections.abc import Callable, Sequence
+import time
 import warnings
+from collections.abc import Callable, Sequence
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,9 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db import get_session_factory
 from app.services.auth import (
     AccountNotFoundError,
+    OwnerAlreadyExistsError,
     ProfilesAlreadyAssignedError,
     ProfilesNotFoundError,
-    OwnerAlreadyExistsError,
     UnsupportedAuthDatabaseError,
     adopt_candidate_profiles,
     bootstrap_owner,
@@ -21,12 +22,10 @@ from app.services.auth import (
     reset_password,
     validate_password,
 )
-import time
-
+from app.services.discovery_runner import DiscoveryBusy, discovery_lock, effective_run_status, run_sources
 from app.services.job_discovery import JobSource, run_discovery
 from app.services.job_sources.greenhouse import GreenhouseBoardSource
 from app.services.link_verification import listings_due_for_check, verify_listing_links
-from app.services.discovery_runner import DiscoveryBusy, discovery_lock, effective_run_status, run_sources
 from app.services.source_registry import REGISTRY_PATH, RegistryError, load_registry, parse_registry
 
 
@@ -81,8 +80,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run discovery for enabled registry sources; one failing source never stops the rest.",
     )
     registry_run.add_argument("--source", action="append", default=[], help="Registry id; repeat to choose several.")
-    registry_run.add_argument("--force", action="store_true", help="Ignore per-source minimum intervals (use sparingly).")
-    registry_run.add_argument("--full", action="store_true", help="Read each source's whole window, not only what is new.")
+    registry_run.add_argument(
+        "--force", action="store_true", help="Ignore per-source minimum intervals (use sparingly)."
+    )
+    registry_run.add_argument(
+        "--full", action="store_true", help="Read each source's whole window, not only what is new."
+    )
     commands.add_parser("validate-sources", help="Validate the source registry file without contacting any source.")
     commands.add_parser("discovery-status", help="Summarise the latest run of every enabled source.")
     links = commands.add_parser(
@@ -254,9 +257,7 @@ def _adopt_profiles(
         return 2
     try:
         email = normalize_login_email(input_fn("Owner account email: "))
-        confirmation = normalize_login_email(
-            input_fn("Re-enter owner account email to confirm: ")
-        )
+        confirmation = normalize_login_email(input_fn("Re-enter owner account email to confirm: "))
     except ValueError as error:
         output(str(error))
         return 2
@@ -312,7 +313,9 @@ def _discover_greenhouse(
         output("Discovery failed because of a database operation error.")
         return 1
     if run.status != "succeeded":
-        output(f"Discovery failed for greenhouse:{source.key} ({run.error_category}); stored listings were not changed.")
+        output(
+            f"Discovery failed for greenhouse:{source.key} ({run.error_category}); stored listings were not changed."
+        )
         return 1
     output(
         f"Discovery succeeded for greenhouse:{source.key}: fetched {run.fetched_count}, "
@@ -328,7 +331,9 @@ def _list_sources(output: Callable[[str], object]) -> int:
     output(f"{len(registry)} registered sources, {len(enabled)} enabled for automatic discovery.")
     for entry in registry:
         target = f"{entry.method}:{entry.board}" if entry.board else "manual only"
-        output(f"- {entry.id} [{entry.category}] {target} ({entry.verification.get('outcome')}, checked {entry.verification.get('checked_at')})")
+        output(
+            f"- {entry.id} [{entry.category}] {target} ({entry.verification.get('outcome')}, checked {entry.verification.get('checked_at')})"
+        )
     return 0
 
 
@@ -362,8 +367,11 @@ def _discover_registry(
         output(f"{outcome.source_id}: {'skipped, ' if outcome.status == 'skipped' else ''}{outcome.message}.")
     failures = sum(outcome.status in ("failed", "error") for outcome in outcomes)
     paced = sum(outcome.status == "skipped" for outcome in outcomes)
-    output(f"{len(selected) - failures - paced} of {len(selected)} sources succeeded"
-           + (f", {paced} skipped for pacing" if paced else "") + ".")
+    output(
+        f"{len(selected) - failures - paced} of {len(selected)} sources succeeded"
+        + (f", {paced} skipped for pacing" if paced else "")
+        + "."
+    )
     return 1 if failures else 0
 
 
@@ -379,8 +387,11 @@ def _validate_sources(output: Callable[[str], object]) -> int:
     by_method: dict[str, int] = {}
     for entry in enabled:
         by_method[entry.method] = by_method.get(entry.method, 0) + 1
-    output(f"Registry valid: {len(registry)} sources, {len(enabled)} enabled ("
-           + ", ".join(f"{method} {count}" for method, count in sorted(by_method.items())) + ").")
+    output(
+        f"Registry valid: {len(registry)} sources, {len(enabled)} enabled ("
+        + ", ".join(f"{method} {count}" for method, count in sorted(by_method.items()))
+        + ")."
+    )
     return 0
 
 
@@ -396,15 +407,22 @@ def _discovery_status(output: Callable[[str], object], session_factory: sessionm
             run = session.scalar(
                 select(JobDiscoveryRun)
                 .where(JobDiscoveryRun.source_kind == entry.source_kind, JobDiscoveryRun.source_key == entry.source_key)
-                .order_by(JobDiscoveryRun.started_at.desc()).limit(1)
+                .order_by(JobDiscoveryRun.started_at.desc())
+                .limit(1)
             )
             if run is None:
                 output(f"- {entry.id}: never run")
                 continue
             state = effective_run_status(run)
             problems += state in ("failed", "interrupted")
-            counts = (f"fetched {run.fetched_count}, new {run.created_count}, updated {run.updated_count}, "
-                      f"skipped {run.skipped_count}") if state == "succeeded" else (run.error_category or "")
+            counts = (
+                (
+                    f"fetched {run.fetched_count}, new {run.created_count}, updated {run.updated_count}, "
+                    f"skipped {run.skipped_count}"
+                )
+                if state == "succeeded"
+                else (run.error_category or "")
+            )
             output(f"- {entry.id}: {state} at {run.started_at:%Y-%m-%d %H:%M} UTC; {counts}")
     return 1 if problems else 0
 

@@ -12,12 +12,37 @@ EXPECTED_SECTION_ORDER = [
 ]
 WORD_PATTERN = re.compile(r"[A-Za-z0-9+#]+")
 ACTION_WORDS = {
-    "analyzed", "automated", "built", "created", "delivered", "designed",
-    "developed", "enabled", "established", "implemented", "improved",
-    "increased", "introduced", "launched", "led", "maintained", "managed",
-    "migrated", "optimized", "organized", "reduced", "resolved", "secured",
-    "streamlined", "strengthened", "supported", "tested", "transformed",
-    "upgraded", "used", "wrote",
+    "analyzed",
+    "automated",
+    "built",
+    "created",
+    "delivered",
+    "designed",
+    "developed",
+    "enabled",
+    "established",
+    "implemented",
+    "improved",
+    "increased",
+    "introduced",
+    "launched",
+    "led",
+    "maintained",
+    "managed",
+    "migrated",
+    "optimized",
+    "organized",
+    "reduced",
+    "resolved",
+    "secured",
+    "streamlined",
+    "strengthened",
+    "supported",
+    "tested",
+    "transformed",
+    "upgraded",
+    "used",
+    "wrote",
     # Present-tense forms (current roles) and the CV writer's verb vocabulary.
     *PAST_TENSE,
     *(verb.casefold() for verb in PAST_TENSE.values()),
@@ -71,9 +96,7 @@ def validate_cv_content(
     for section in content.sections:
         for claim in section.claims:
             if not claim.source_references:
-                errors.append(
-                    f"{section.heading} contains a claim without a source reference."
-                )
+                errors.append(f"{section.heading} contains a claim without a source reference.")
         if section.heading == "Professional Experience":
             for role in section.roles:
                 label = f"{role.job_title} at {role.employer}"
@@ -103,26 +126,47 @@ def completeness_issues(content: CVStructuredContent) -> list[dict]:
     """
     issues: list[dict] = []
     if not content.professional_heading.strip():
-        issues.append({"group": "profile_evidence", "message": "The CV has no professional headline.",
-                       "action": "Add a professional headline to your candidate profile."})
+        issues.append(
+            {
+                "group": "profile_evidence",
+                "message": "The CV has no professional headline.",
+                "action": "Add a professional headline to your candidate profile.",
+            }
+        )
     if not any(section.heading == "Professional Summary" and section.claims for section in content.sections):
-        issues.append({"group": "profile_evidence", "message": "The CV has no professional summary.",
-                       "action": "Add a summary in your own words to your candidate profile."})
+        issues.append(
+            {
+                "group": "profile_evidence",
+                "message": "The CV has no professional summary.",
+                "action": "Add a summary in your own words to your candidate profile.",
+            }
+        )
     for section in content.sections:
         if section.heading != "Professional Experience":
             continue
         if not section.roles:
-            issues.append({"group": "experience_evidence", "message": "Professional Experience has no roles.",
-                           "action": "Add your work history to your candidate profile."})
+            issues.append(
+                {
+                    "group": "experience_evidence",
+                    "message": "Professional Experience has no roles.",
+                    "action": "Add your work history to your candidate profile.",
+                }
+            )
         for role in section.roles:
             if len(role.bullets) < TARGET_BULLETS:
-                issues.append({
-                    "group": "experience_evidence",
-                    "role": f"{role.job_title} at {role.employer}",
-                    "work_experience_id": str(role.work_experience_id),
-                    "message": (f"{role.job_title} at {role.employer} has {len(role.bullets)} supported "
-                                f"bullet{'s' if len(role.bullets) != 1 else ''}; the CV layout aims for {TARGET_BULLETS}."),
-                    "action": ("Add truthful achievements to this role in your profile, or give an example of using a "
-                               "skill in this role below. JobPilot will not invent bullets to fill the gap."),
-                })
+                issues.append(
+                    {
+                        "group": "experience_evidence",
+                        "role": f"{role.job_title} at {role.employer}",
+                        "work_experience_id": str(role.work_experience_id),
+                        "message": (
+                            f"{role.job_title} at {role.employer} has {len(role.bullets)} supported "
+                            f"bullet{'s' if len(role.bullets) != 1 else ''}; the CV layout aims for {TARGET_BULLETS}."
+                        ),
+                        "action": (
+                            "Add truthful achievements to this role in your profile, or give an example of using a "
+                            "skill in this role below. JobPilot will not invent bullets to fill the gap."
+                        ),
+                    }
+                )
     return issues

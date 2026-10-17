@@ -57,9 +57,7 @@ def _job_count(factory: sessionmaker[Session]) -> int:
         return session.scalar(select(func.count()).select_from(CandidateJobDescription))
 
 
-def test_import_copies_stored_listing_text_verbatim_and_links_the_source(
-    api_client: TestClient, database
-) -> None:
+def test_import_copies_stored_listing_text_verbatim_and_links_the_source(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory)
     profile_id = _create_profile(api_client)
@@ -78,9 +76,7 @@ def test_import_copies_stored_listing_text_verbatim_and_links_the_source(
     assert [item["id"] for item in listed] == [body["id"]]
 
 
-def test_importing_the_same_listing_again_returns_the_existing_job(
-    api_client: TestClient, database
-) -> None:
+def test_importing_the_same_listing_again_returns_the_existing_job(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory)
     profile_id = _create_profile(api_client)
@@ -93,9 +89,7 @@ def test_importing_the_same_listing_again_returns_the_existing_job(
     assert _job_count(factory) == 1
 
 
-def test_each_profile_gets_its_own_copy_of_a_shared_listing(
-    api_client: TestClient, database
-) -> None:
+def test_each_profile_gets_its_own_copy_of_a_shared_listing(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory)
     first_profile = _create_profile(api_client)
@@ -108,9 +102,7 @@ def test_each_profile_gets_its_own_copy_of_a_shared_listing(
     assert first.json()["id"] != second.json()["id"]
 
 
-def test_unknown_listing_returns_404_and_creates_nothing(
-    api_client: TestClient, database
-) -> None:
+def test_unknown_listing_returns_404_and_creates_nothing(api_client: TestClient, database) -> None:
     _, factory = database
     profile_id = _create_profile(api_client)
 
@@ -120,9 +112,7 @@ def test_unknown_listing_returns_404_and_creates_nothing(
     assert _job_count(factory) == 0
 
 
-def test_listing_no_longer_at_source_cannot_be_imported(
-    api_client: TestClient, database
-) -> None:
+def test_listing_no_longer_at_source_cannot_be_imported(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory, source_status="missing_from_source")
     profile_id = _create_profile(api_client)
@@ -134,9 +124,7 @@ def test_listing_no_longer_at_source_cannot_be_imported(
     assert _job_count(factory) == 0
 
 
-def test_listing_without_source_description_cannot_be_imported(
-    api_client: TestClient, database
-) -> None:
+def test_listing_without_source_description_cannot_be_imported(api_client: TestClient, database) -> None:
     _, factory = database
     empty = _store_listing(factory, description_text=None)
     blank = _store_listing(factory, description_text="   ")
@@ -148,9 +136,7 @@ def test_listing_without_source_description_cannot_be_imported(
     assert _job_count(factory) == 0
 
 
-def test_oversized_listing_is_rejected_rather_than_truncated(
-    api_client: TestClient, database
-) -> None:
+def test_oversized_listing_is_rejected_rather_than_truncated(api_client: TestClient, database) -> None:
     _, factory = database
     long_title = _store_listing(factory, title="T" * 241)
     long_description = _store_listing(factory, description_text="d" * 50_001)
@@ -167,9 +153,7 @@ def test_oversized_listing_is_rejected_rather_than_truncated(
     assert _job_count(factory) == 1
 
 
-def test_import_into_a_profile_the_user_does_not_own_is_not_found(
-    api_client: TestClient, database
-) -> None:
+def test_import_into_a_profile_the_user_does_not_own_is_not_found(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory)
     with factory.begin() as session:
@@ -198,9 +182,7 @@ def test_import_requires_csrf_verification(api_client: TestClient, database) -> 
     assert _job_count(factory) == 0
 
 
-def test_imported_job_drives_cv_generation_and_keeps_its_source_link(
-    api_client: TestClient, database
-) -> None:
+def test_imported_job_drives_cv_generation_and_keeps_its_source_link(api_client: TestClient, database) -> None:
     _, factory = database
     listing_id = _store_listing(factory)
     profile_id = _create_profile(api_client)

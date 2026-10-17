@@ -27,7 +27,9 @@ def _profile(client: TestClient) -> str:
 
 
 def _job(client: TestClient, profile_id: str, description: str) -> str:
-    response = client.post(f"{API}/{profile_id}/job-descriptions", json={"job_title": "Support Engineer", "description": description})
+    response = client.post(
+        f"{API}/{profile_id}/job-descriptions", json={"job_title": "Support Engineer", "description": description}
+    )
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -46,19 +48,35 @@ def _confirm(client: TestClient, profile_id: str, **details) -> None:
 def _evidence(factory: sessionmaker[Session], profile_id: str, description: str, status: str) -> UUID:
     with factory.begin() as session:
         document = CandidateDocument(
-            candidate_profile_id=UUID(profile_id), document_kind="source_cv", provenance="candidate_uploaded",
-            original_filename="cv.txt", media_type="text/plain", storage_key=f"{uuid4().hex}.txt",
-            size_bytes=4, sha256=sha256(b"cv").hexdigest(),
+            candidate_profile_id=UUID(profile_id),
+            document_kind="source_cv",
+            provenance="candidate_uploaded",
+            original_filename="cv.txt",
+            media_type="text/plain",
+            storage_key=f"{uuid4().hex}.txt",
+            size_bytes=4,
+            sha256=sha256(b"cv").hexdigest(),
         )
         session.add(document)
         session.flush()
-        session.add(DocumentExtraction(
-            source_document_id=document.id, status="succeeded", extracted_text="cv",
-            character_count=2, extractor_version="stdlib/stdlib",
-        ))
+        session.add(
+            DocumentExtraction(
+                source_document_id=document.id,
+                status="succeeded",
+                extracted_text="cv",
+                character_count=2,
+                extractor_version="stdlib/stdlib",
+            )
+        )
         evidence = CandidateEvidence(
-            candidate_profile_id=UUID(profile_id), source_document_id=document.id, category="technical_skill",
-            description=description, source_excerpt="cv", source_start=0, source_end=2, confirmation_status=status,
+            candidate_profile_id=UUID(profile_id),
+            source_document_id=document.id,
+            category="technical_skill",
+            description=description,
+            source_excerpt="cv",
+            source_start=0,
+            source_end=2,
+            confirmation_status=status,
         )
         session.add(evidence)
         session.flush()
@@ -69,8 +87,12 @@ def _material(factory: sessionmaker[Session], profile_id: str) -> tuple[UUID, UU
     with factory.begin() as session:
         skill = CandidateSkill(candidate_profile_id=UUID(profile_id), name="Python")
         experience = CandidateWorkExperience(
-            candidate_profile_id=UUID(profile_id), employer="Northstar", job_title="Support Analyst",
-            start_date=date(2022, 1, 1), current_role=True, achievements=["Wrote SQL reports for the help desk."],
+            candidate_profile_id=UUID(profile_id),
+            employer="Northstar",
+            job_title="Support Analyst",
+            start_date=date(2022, 1, 1),
+            current_role=True,
+            achievements=["Wrote SQL reports for the help desk."],
         )
         session.add_all([skill, experience])
         session.flush()
@@ -80,12 +102,21 @@ def _material(factory: sessionmaker[Session], profile_id: str) -> tuple[UUID, UU
 def _listing(factory: sessionmaker[Session], description: str) -> UUID:
     with factory.begin() as session:
         listing = JobListing(
-            source_kind="greenhouse", source_key="syntheticco", source_listing_id=str(uuid4()),
+            source_kind="greenhouse",
+            source_key="syntheticco",
+            source_listing_id=str(uuid4()),
             source_url="https://boards-api.greenhouse.io/v1/boards/syntheticco/jobs?content=true",
-            application_url="https://job-boards.greenhouse.io/syntheticco/jobs/1", employer_name="Synthetic Co",
-            title="Support Engineer", description_text=description, location_text="Remote",
-            content_hash="0" * 64, dedupe_key="1" * 64, source_status="active",
-            first_seen_at=NOW, last_seen_at=NOW, last_verified_at=NOW,
+            application_url="https://job-boards.greenhouse.io/syntheticco/jobs/1",
+            employer_name="Synthetic Co",
+            title="Support Engineer",
+            description_text=description,
+            location_text="Remote",
+            content_hash="0" * 64,
+            dedupe_key="1" * 64,
+            source_status="active",
+            first_seen_at=NOW,
+            last_seen_at=NOW,
+            last_verified_at=NOW,
         )
         session.add(listing)
         session.flush()
@@ -96,7 +127,9 @@ def _items(fit: dict, bucket: str) -> dict[str, dict]:
     return {item["requirement"]: item for item in fit[bucket]}
 
 
-def test_requirements_are_split_into_matched_unverified_and_missing_with_provenance(api_client: TestClient, database) -> None:
+def test_requirements_are_split_into_matched_unverified_and_missing_with_provenance(
+    api_client: TestClient, database
+) -> None:
     _, factory = database
     profile_id = _profile(api_client)
     skill_id, experience_id = _material(factory, profile_id)
@@ -109,7 +142,11 @@ def test_requirements_are_split_into_matched_unverified_and_missing_with_provena
 
     matched = _items(fit, "matched")
     assert set(matched) == {"Python", "SQL", "Linux"}
-    assert matched["Python"]["sources"][0] == {"source_type": "skill", "source_id": str(skill_id), "label": "Skill: Python"}
+    assert matched["Python"]["sources"][0] == {
+        "source_type": "skill",
+        "source_id": str(skill_id),
+        "label": "Skill: Python",
+    }
     assert matched["SQL"]["sources"][0]["source_id"] == str(experience_id)
     assert matched["Linux"]["sources"][0]["source_id"] == str(confirmed)
     assert _items(fit, "uncertain")["Zendesk"]["sources"][0]["label"].startswith("Unreviewed evidence")
@@ -146,10 +183,20 @@ def test_geographic_exclusion_is_not_outweighed_by_full_skills_coverage(api_clie
     profile_id = _profile(api_client)
     _material(factory, profile_id)
     restriction = "Applicants must reside in the United Kingdom."
-    job_id, assessment_id = _import_reviewed(api_client, factory, profile_id, f"Required skills: Python.\n{restriction}", {
-        "outcome": "not_eligible", "explanation": "UK residents only.", "quotation": restriction,
-        "evidence_field": "description", "statement_scope": "role", "role_applicability": "direct",
-    })
+    job_id, assessment_id = _import_reviewed(
+        api_client,
+        factory,
+        profile_id,
+        f"Required skills: Python.\n{restriction}",
+        {
+            "outcome": "not_eligible",
+            "explanation": "UK residents only.",
+            "quotation": restriction,
+            "evidence_field": "description",
+            "statement_scope": "role",
+            "role_applicability": "direct",
+        },
+    )
 
     fit = _fit(api_client, profile_id, job_id)
 
@@ -165,10 +212,20 @@ def test_confirmed_eligibility_without_blockers(api_client: TestClient, database
     _, factory = database
     profile_id = _profile(api_client)
     statement = "This role is open to candidates in any country."
-    job_id, _ = _import_reviewed(api_client, factory, profile_id, f"Required skills: Python.\n{statement}", {
-        "outcome": "eligible_confirmed", "explanation": "Any country.", "quotation": statement,
-        "evidence_field": "description", "statement_scope": "role", "role_applicability": "direct",
-    })
+    job_id, _ = _import_reviewed(
+        api_client,
+        factory,
+        profile_id,
+        f"Required skills: Python.\n{statement}",
+        {
+            "outcome": "eligible_confirmed",
+            "explanation": "Any country.",
+            "quotation": statement,
+            "evidence_field": "description",
+            "statement_scope": "role",
+            "role_applicability": "direct",
+        },
+    )
 
     fit = _fit(api_client, profile_id, job_id)
 
@@ -181,10 +238,20 @@ def test_stale_geographic_evidence_is_reported_as_unknown(api_client: TestClient
     _, factory = database
     profile_id = _profile(api_client)
     statement = "This role is open to candidates in any country."
-    job_id, _ = _import_reviewed(api_client, factory, profile_id, statement, {
-        "outcome": "eligible_confirmed", "explanation": "Any country.", "quotation": statement,
-        "evidence_field": "description", "statement_scope": "role", "role_applicability": "direct",
-    })
+    job_id, _ = _import_reviewed(
+        api_client,
+        factory,
+        profile_id,
+        statement,
+        {
+            "outcome": "eligible_confirmed",
+            "explanation": "Any country.",
+            "quotation": statement,
+            "evidence_field": "description",
+            "statement_scope": "role",
+            "role_applicability": "direct",
+        },
+    )
     with factory.begin() as session:
         listing = session.query(JobListing).one()
         listing.description_text = statement + " Updated."
@@ -241,7 +308,9 @@ def test_residency_restrictions_against_confirmed_residence_and_relocation(api_c
     assert "not willing to relocate" in excluded["disqualifiers"][0]["explanation"]
     assert _fit(api_client, profile_id, descriptive)["disqualifiers"] == []
 
-    _confirm(api_client, profile_id, country_of_residence="KE", relocation_willingness="willing", relocation_countries=["DE"])
+    _confirm(
+        api_client, profile_id, country_of_residence="KE", relocation_willingness="willing", relocation_countries=["DE"]
+    )
     movable = _fit(api_client, profile_id, strict)
     assert movable["disqualifiers"] == []
     assert "willing to relocate" in _items(movable, "uncertain")["Location"]["explanation"]
@@ -253,7 +322,11 @@ def test_residency_restrictions_against_confirmed_residence_and_relocation(api_c
 def test_contradictory_location_wording_is_flagged_as_uncertain(api_client: TestClient) -> None:
     profile_id = _profile(api_client)
 
-    fit = _fit(api_client, profile_id, _job(api_client, profile_id, "This role is open to candidates in any country.\nYou must reside in Canada."))
+    fit = _fit(
+        api_client,
+        profile_id,
+        _job(api_client, profile_id, "This role is open to candidates in any country.\nYou must reside in Canada."),
+    )
 
     contradiction = _items(fit, "uncertain")["Contradictory location wording"]
     assert "open to candidates in any country" in contradiction["quotation"]
@@ -264,7 +337,11 @@ def test_work_arrangement_is_a_preference_not_a_disqualifier(api_client: TestCli
     profile_id = _profile(api_client)
     _confirm(api_client, profile_id, accepted_work_arrangements=["remote"])
 
-    fit = _fit(api_client, profile_id, _job(api_client, profile_id, "This is a hybrid role with 3 days per week in our office."))
+    fit = _fit(
+        api_client,
+        profile_id,
+        _job(api_client, profile_id, "This is a hybrid role with 3 days per week in our office."),
+    )
 
     assert {item["status"] for item in fit["preferences"]} == {"mismatch"}
     assert fit["disqualifiers"] == []
@@ -273,7 +350,11 @@ def test_work_arrangement_is_a_preference_not_a_disqualifier(api_client: TestCli
 def test_no_stated_requirements_and_pronoun_us_are_handled_honestly(api_client: TestClient) -> None:
     profile_id = _profile(api_client)
 
-    fit = _fit(api_client, profile_id, _job(api_client, profile_id, "Tell us about yourself. Applicants must be authorized to work."))
+    fit = _fit(
+        api_client,
+        profile_id,
+        _job(api_client, profile_id, "Tell us about yourself. Applicants must be authorized to work."),
+    )
 
     assert fit["coverage"]["total"] == 0
     assert "not measured" in fit["coverage"]["summary"]

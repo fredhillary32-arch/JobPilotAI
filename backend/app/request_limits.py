@@ -1,4 +1,5 @@
 """Server-side request body limits, enforced before a body is parsed or spooled."""
+
 import re
 
 from fastapi import HTTPException, status
@@ -59,13 +60,15 @@ class BodySizeLimitMiddleware:
 
 async def _reject(send: Send) -> None:
     body = b'{"detail":"' + TOO_LARGE_DETAIL.encode() + b'"}'
-    await send({
-        "type": "http.response.start",
-        "status": status.HTTP_413_CONTENT_TOO_LARGE,
-        "headers": [
-            (b"content-type", b"application/json"),
-            (b"content-length", str(len(body)).encode()),
-            (b"connection", b"close"),
-        ],
-    })
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status.HTTP_413_CONTENT_TOO_LARGE,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"connection", b"close"),
+            ],
+        }
+    )
     await send({"type": "http.response.body", "body": body})

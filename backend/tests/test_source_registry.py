@@ -1,4 +1,5 @@
 """Source registry validation, registry-driven discovery and run provenance."""
+
 import copy
 from datetime import datetime, timedelta, timezone
 
@@ -12,10 +13,14 @@ from app.services.source_registry import AGGREGATOR_METHODS, RegistryError, load
 
 NOW = datetime(2026, 10, 16, 9, 0, tzinfo=timezone.utc)
 VALID = {
-    "id": "syntheticco", "name": "Synthetic Co", "category": "direct_employer",
-    "official_domain": "synthetic.example", "additional_domains": [],
+    "id": "syntheticco",
+    "name": "Synthetic Co",
+    "category": "direct_employer",
+    "official_domain": "synthetic.example",
+    "additional_domains": [],
     "careers_url": "https://synthetic.example/careers",
-    "discovery": {"method": "ashby", "board": "syntheticco", "instance": None}, "enabled": True,
+    "discovery": {"method": "ashby", "board": "syntheticco", "instance": None},
+    "enabled": True,
     "verification": {"checked_at": "2026-10-16T23:00:00Z", "outcome": "board_found_on_official_page", "evidence": "x"},
 }
 
@@ -89,9 +94,12 @@ class _FakeSource:
 
 def _listing(identifier: str, **extra) -> SourceListing:
     values = dict(
-        source_listing_id=identifier, source_url="https://api.ashbyhq.com/posting-api/job-board/x",
-        listing_url=f"https://jobs.ashbyhq.com/x/{identifier}", application_url=f"https://jobs.ashbyhq.com/x/{identifier}/application",
-        employer_name="Synthetic Co", title="Support Specialist",
+        source_listing_id=identifier,
+        source_url="https://api.ashbyhq.com/posting-api/job-board/x",
+        listing_url=f"https://jobs.ashbyhq.com/x/{identifier}",
+        application_url=f"https://jobs.ashbyhq.com/x/{identifier}/application",
+        employer_name="Synthetic Co",
+        title="Support Specialist",
     )
     values.update(extra)
     return SourceListing(**values)
@@ -99,21 +107,41 @@ def _listing(identifier: str, **extra) -> SourceListing:
 
 def test_one_failing_source_does_not_stop_the_others(database, monkeypatch) -> None:
     _, factory = database
-    registry = parse_registry(_registry(
-        {**copy.deepcopy(VALID), "id": "ok-source", "discovery": {"method": "ashby", "board": "ok", "instance": None}},
-        {**copy.deepcopy(VALID), "id": "flaky", "discovery": {"method": "ashby", "board": "flaky", "instance": None}},
-        {**copy.deepcopy(VALID), "id": "crashing", "discovery": {"method": "ashby", "board": "crashing", "instance": None}},
-    ))
+    registry = parse_registry(
+        _registry(
+            {
+                **copy.deepcopy(VALID),
+                "id": "ok-source",
+                "discovery": {"method": "ashby", "board": "ok", "instance": None},
+            },
+            {
+                **copy.deepcopy(VALID),
+                "id": "flaky",
+                "discovery": {"method": "ashby", "board": "flaky", "instance": None},
+            },
+            {
+                **copy.deepcopy(VALID),
+                "id": "crashing",
+                "discovery": {"method": "ashby", "board": "crashing", "instance": None},
+            },
+        )
+    )
     monkeypatch.setattr(cli, "load_registry", lambda: registry)
     sources = {
-        "ok-source": _FakeSource("ok", [_listing("1"), _listing("2", application_url="http://insecure.test/apply"), _listing("1")]),
+        "ok-source": _FakeSource(
+            "ok", [_listing("1"), _listing("2", application_url="http://insecure.test/apply"), _listing("1")]
+        ),
         "flaky": _FakeSource("flaky", error=SourceFetchError("rate_limited")),
         "crashing": _FakeSource("crashing", error=RuntimeError("boom")),
     }
     output: list[str] = []
 
-    code = cli.main(["discover-registry"], output=output.append, session_factory=factory,
-                    registry_source_factory=lambda entry: sources[entry.id])
+    code = cli.main(
+        ["discover-registry"],
+        output=output.append,
+        session_factory=factory,
+        registry_source_factory=lambda entry: sources[entry.id],
+    )
 
     assert code == 1
     assert any(line.startswith("ok-source: fetched 3, new 1") for line in output)
@@ -133,14 +161,19 @@ def test_manual_and_unknown_sources_are_refused(database) -> None:
     output: list[str] = []
     assert cli.main(["discover-registry", "--source", "randstad"], output=output.append, session_factory=factory) == 2
     assert "Manual-only sources are never fetched: randstad" in output
-    assert cli.main(["discover-registry", "--source", "not-a-source"], output=output.append, session_factory=factory) == 2
+    assert (
+        cli.main(["discover-registry", "--source", "not-a-source"], output=output.append, session_factory=factory) == 2
+    )
 
 
 def test_list_sources_reports_registry_counts() -> None:
     output: list[str] = []
     assert cli.main(["list-sources"], output=output.append) == 0
     registry = load_registry()
-    assert output[0] == f"{len(registry)} registered sources, {sum(e.enabled for e in registry)} enabled for automatic discovery."
+    assert (
+        output[0]
+        == f"{len(registry)} registered sources, {sum(e.enabled for e in registry)} enabled for automatic discovery."
+    )
 
 
 def test_relisted_vacancy_keeps_its_stated_posting_date(database) -> None:
@@ -158,9 +191,14 @@ def test_relisted_vacancy_keeps_its_stated_posting_date(database) -> None:
 
 
 AGGREGATOR = {
-    "id": "jobicy-test", "name": "Jobicy", "category": "aggregator", "official_domain": "jobicy.com",
-    "careers_url": "https://jobicy.com/jobs-rss-feed", "discovery": {"method": "jobicy", "board": "public"},
-    "enabled": True, "verification": {"outcome": "public_api_documented", "checked_at": "2026-10-17T00:00:00Z"},
+    "id": "jobicy-test",
+    "name": "Jobicy",
+    "category": "aggregator",
+    "official_domain": "jobicy.com",
+    "careers_url": "https://jobicy.com/jobs-rss-feed",
+    "discovery": {"method": "jobicy", "board": "public"},
+    "enabled": True,
+    "verification": {"outcome": "public_api_documented", "checked_at": "2026-10-17T00:00:00Z"},
     "terms": "Credit Jobicy and keep its canonical URL.",
 }
 

@@ -4,6 +4,7 @@ An assessment only stays authoritative while the listing's description and
 location are exactly the text it examined. Any change, including whitespace or
 a value becoming null, makes it stale and the effective result unknown.
 """
+
 from collections.abc import Iterable
 from uuid import UUID
 

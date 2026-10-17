@@ -89,9 +89,7 @@ def confirm_eligibility_details(
     details.accepted_work_arrangements = payload.accepted_work_arrangements
     details.confirmed_at = now
     session.execute(
-        delete(CandidateWorkAuthorization).where(
-            CandidateWorkAuthorization.candidate_profile_id == profile_id
-        )
+        delete(CandidateWorkAuthorization).where(CandidateWorkAuthorization.candidate_profile_id == profile_id)
     )
     session.add_all(
         CandidateWorkAuthorization(

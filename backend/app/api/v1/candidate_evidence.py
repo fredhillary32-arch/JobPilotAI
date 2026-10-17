@@ -1,4 +1,3 @@
-from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -73,11 +72,7 @@ def _get_usable_extraction(
     document_id: UUID,
     session: DatabaseSession,
 ) -> DocumentExtraction:
-    extraction = session.scalar(
-        select(DocumentExtraction).where(
-            DocumentExtraction.source_document_id == document_id
-        )
-    )
+    extraction = session.scalar(select(DocumentExtraction).where(DocumentExtraction.source_document_id == document_id))
     if extraction is None or extraction.status != "succeeded" or not extraction.extracted_text:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -143,18 +138,21 @@ def list_candidate_evidence(
     get_profile_or_404(session, profile_id)
     # Records created together share created_at; the tie-breakers keep the order
     # fixed when one is updated (PostgreSQL may otherwise return ties in a new order).
-    return mark_currency(session, list(
-        session.scalars(
-            select(CandidateEvidence)
-            .where(CandidateEvidence.candidate_profile_id == profile_id)
-            .order_by(
-                CandidateEvidence.created_at.desc(),
-                CandidateEvidence.source_document_id,
-                CandidateEvidence.source_start,
-                CandidateEvidence.id,
+    return mark_currency(
+        session,
+        list(
+            session.scalars(
+                select(CandidateEvidence)
+                .where(CandidateEvidence.candidate_profile_id == profile_id)
+                .order_by(
+                    CandidateEvidence.created_at.desc(),
+                    CandidateEvidence.source_document_id,
+                    CandidateEvidence.source_start,
+                    CandidateEvidence.id,
+                )
             )
-        )
-    ))
+        ),
+    )
 
 
 @router.post(
@@ -181,10 +179,14 @@ def create_evidence_suggestions(
             status_code=status.HTTP_409_CONFLICT,
             detail="Extracted text is outside the supported evidence size",
         )
-    existing = list(session.scalars(select(CandidateEvidence).where(
-        CandidateEvidence.candidate_profile_id == profile_id,
-        CandidateEvidence.source_document_id == document.id,
-    )))
+    existing = list(
+        session.scalars(
+            select(CandidateEvidence).where(
+                CandidateEvidence.candidate_profile_id == profile_id,
+                CandidateEvidence.source_document_id == document.id,
+            )
+        )
+    )
     records, skipped, limited = new_evidence_for(profile_id, document.id, text, existing)
     session.add_all(records)
     session.commit()
@@ -284,9 +286,8 @@ def update_candidate_evidence(
         )
     for field_name, value in changes.items():
         setattr(evidence, field_name, value)
-    if (
-        changes.get("confirmation_status") == "candidate_confirmed"
-        and not is_current(evidence, extraction.extracted_text)
+    if changes.get("confirmation_status") == "candidate_confirmed" and not is_current(
+        evidence, extraction.extracted_text
     ):
         session.rollback()
         raise HTTPException(

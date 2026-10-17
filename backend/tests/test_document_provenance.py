@@ -93,15 +93,12 @@ def test_generated_export_cannot_be_extracted(
     response = api_client.post(f"{API}/{profile_id}/documents/{document_id}/extraction")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == (
-        "Only candidate-uploaded source documents can be extracted"
-    )
+    assert response.json()["detail"] == ("Only candidate-uploaded source documents can be extracted")
     with factory() as session:
-        assert session.scalar(
-            select(DocumentExtraction).where(
-                DocumentExtraction.source_document_id == document_id
-            )
-        ) is None
+        assert (
+            session.scalar(select(DocumentExtraction).where(DocumentExtraction.source_document_id == document_id))
+            is None
+        )
 
 
 def test_generated_export_cannot_become_evidence_even_with_legacy_extraction(
@@ -110,9 +107,7 @@ def test_generated_export_cannot_become_evidence_even_with_legacy_extraction(
 ) -> None:
     _, factory = database
     profile_id = _create_profile(api_client)
-    document_id = _insert_generated_export_document(
-        factory, profile_id, with_succeeded_extraction=True
-    )
+    document_id = _insert_generated_export_document(factory, profile_id, with_succeeded_extraction=True)
 
     response = api_client.post(
         f"{API}/{profile_id}/evidence",

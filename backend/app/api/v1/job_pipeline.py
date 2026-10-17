@@ -1,4 +1,5 @@
 """The candidate's job pipeline: queued listings and application preparation."""
+
 from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
@@ -9,7 +10,12 @@ from sqlalchemy import select
 from app.api.v1.candidate_profiles import get_profile_or_404
 from app.api.v1.dependencies import require_authenticated_resource_access
 from app.api.v1.job_listings import (
-    RoleGroup, keyword_condition, keyword_terms, role_candidate_condition, role_filter, source_condition,
+    RoleGroup,
+    keyword_condition,
+    keyword_terms,
+    role_candidate_condition,
+    role_filter,
+    source_condition,
 )
 from app.db import DatabaseSession
 from app.models import JobListing
@@ -75,5 +81,6 @@ def prepare_listing_application(
     try:
         return prepare_application(session, profile_id, listing, storage)
     except PrepareRefused as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail={"message": str(exc), "reasons": exc.reasons}) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"message": str(exc), "reasons": exc.reasons}
+        ) from exc

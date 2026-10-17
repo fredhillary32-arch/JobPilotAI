@@ -17,6 +17,7 @@ current platform is ``manual_submission``: JobPilot prepares everything it can
 and hands the final step to the candidate. A platform only becomes automatable
 by adding an adapter here with a real, authorized submission channel.
 """
+
 from dataclasses import dataclass
 
 PREPARED_BY_JOBPILOT = (
@@ -59,7 +60,8 @@ def method_for(source_kind: str) -> ApplicationMethod:
     return ApplicationMethod(
         platform=source_kind,
         submission="manual_submission",
-        reason=reason + " JobPilot does not automate employer web forms or bypass bot checks, so you submit the final form.",
+        reason=reason
+        + " JobPilot does not automate employer web forms or bypass bot checks, so you submit the final form.",
         candidate_steps=_MANUAL_STEPS,
     )
 

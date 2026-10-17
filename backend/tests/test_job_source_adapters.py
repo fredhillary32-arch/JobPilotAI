@@ -1,4 +1,5 @@
 """Lever and Ashby adapters and the shared host-pinned HTTP layer (no network)."""
+
 import json
 import socket
 from datetime import datetime, timezone
@@ -16,7 +17,11 @@ from app.services.job_sources.lever import LeverPostingsSource
 LEVER_POSTING = {
     "id": "5ac21346-8e0c-4494-8e7a-3eb92ff77902",
     "text": "Technical Support Engineer",
-    "categories": {"location": "Remote - Africa", "allLocations": ["Remote - Africa", "Nairobi"], "commitment": "Full-time"},
+    "categories": {
+        "location": "Remote - Africa",
+        "allLocations": ["Remote - Africa", "Nairobi"],
+        "commitment": "Full-time",
+    },
     "workplaceType": "remote",
     "country": "ke",
     "createdAt": 1760600000000,
@@ -57,7 +62,11 @@ def test_lever_maps_documented_fields_and_keeps_all_location_wording() -> None:
     # Every section is preserved, including an exclusion buried in a list.
     assert "We cannot hire in Kenya for this role." in listing.description_text
     assert "right to work in their country" in listing.description_text
-    assert (listing.salary_min, listing.salary_max, listing.salary_currency) == (Decimal("30000"), Decimal("45000"), "USD")
+    assert (listing.salary_min, listing.salary_max, listing.salary_currency) == (
+        Decimal("30000"),
+        Decimal("45000"),
+        "USD",
+    )
 
 
 def test_lever_falls_back_to_hosted_url_and_leaves_unknowns_empty() -> None:

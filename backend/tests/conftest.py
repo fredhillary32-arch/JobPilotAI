@@ -1,6 +1,6 @@
+import secrets
 from collections.abc import Generator
 from datetime import timedelta
-import secrets
 
 import pytest
 from fastapi.testclient import TestClient
@@ -48,9 +48,7 @@ def unauthenticated_client(
             session.close()
 
     app.dependency_overrides[get_db_session] = override_db_session
-    app.dependency_overrides[get_document_storage] = lambda: LocalDocumentStorage(
-        tmp_path / "private-documents"
-    )
+    app.dependency_overrides[get_document_storage] = lambda: LocalDocumentStorage(tmp_path / "private-documents")
     test_settings = Settings(
         postgres_user="test-user",
         postgres_password="test-password",

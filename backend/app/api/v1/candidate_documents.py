@@ -116,9 +116,7 @@ def list_candidate_documents(
     origin: Annotated[Literal["all", "source", "generated"], Query()] = "all",
 ) -> list[CandidateDocument]:
     get_profile_or_404(session, profile_id)
-    query = select(CandidateDocument).where(
-        CandidateDocument.candidate_profile_id == profile_id
-    )
+    query = select(CandidateDocument).where(CandidateDocument.candidate_profile_id == profile_id)
     is_source = and_(
         CandidateDocument.document_kind.in_(SOURCE_DOCUMENT_KINDS),
         CandidateDocument.provenance.in_(SOURCE_DOCUMENT_PROVENANCES),

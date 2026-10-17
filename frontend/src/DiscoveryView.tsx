@@ -152,11 +152,13 @@ export function DiscoveryView({
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
-  const [page, setPage] = useState<JobListingPage | null>(null);
-  const [runs, setRuns] = useState<JobDiscoveryRun[]>([]);
+  const [listingResult, setListingResult] = useState<{
+    key: string;
+    page: JobListingPage | null;
+    runs: JobDiscoveryRun[];
+    error: string;
+  } | null>(null);
   const [sources, setSources] = useState<JobSourceHealth[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const importedByListing = new Map(
     importedJobs.flatMap((job) => (job.source_job_listing_id ? [[job.source_job_listing_id, job.id] as const] : [])),
   );
@@ -164,11 +166,15 @@ export function DiscoveryView({
   // Any filter change returns to the first page, without an extra request.
   const filterKey = JSON.stringify([window, eligibilityFilter, scope, category, roleGroups, excludeGroup, sourceId, workplace, sort, verifiedOnly, appliedSearch]);
   const offset = paging.key === filterKey ? paging.offset : 0;
+  const requestKey = JSON.stringify([filterKey, offset, reloadToken]);
+  const currentListingResult = listingResult?.key === requestKey ? listingResult : null;
+  const page = currentListingResult?.page ?? null;
+  const runs = currentListingResult?.runs ?? [];
+  const error = currentListingResult?.error ?? "";
+  const loading = currentListingResult === null;
 
   useEffect(() => {
     let current = true;
-    setLoading(true);
-    setError("");
     const filters: JobListingFilters = {
       ...(window !== "all" && { postedWithinHours: Number(window) }),
       ...(eligibilityFilter !== "all" && { kenya: eligibilityFilter }),
@@ -186,23 +192,25 @@ export function DiscoveryView({
     Promise.all([api.listJobListings(filters), api.listDiscoveryRuns()])
       .then(([listings, discoveryRuns]) => {
         if (!current) return;
-        setPage(listings);
-        setRuns(discoveryRuns);
+        setListingResult({ key: requestKey, page: listings, runs: discoveryRuns, error: "" });
       })
       .catch((caught: unknown) => {
         if (!current) return;
-        setPage(null);
-        setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "Discovered jobs could not be loaded.");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
+        setListingResult({
+          key: requestKey,
+          page: null,
+          runs: [],
+          error: caught instanceof ApiError || caught instanceof Error
+            ? caught.message
+            : "Discovered jobs could not be loaded.",
+        });
       });
     return () => {
       current = false;
     };
-    // filterKey covers every filter value used above.
+    // requestKey includes every filter value, the offset, and the reload token.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, offset, reloadToken]);
+  }, [requestKey]);
 
   useEffect(() => {
     let current = true;

@@ -6,9 +6,10 @@ site's published postings. ``createdAt`` (epoch milliseconds) is the posting's
 creation time as Lever reports it; it is stored as the posting date and nothing
 else is inferred.
 """
-from datetime import datetime, timezone
+
 import re
 from collections.abc import Callable
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -39,7 +40,9 @@ def _decimal(value: Any) -> Decimal | None:
 class LeverPostingsSource:
     kind = "lever"
 
-    def __init__(self, site: str, employer_name: str, *, instance: str = "global", fetcher: JsonFetcher | None = None) -> None:
+    def __init__(
+        self, site: str, employer_name: str, *, instance: str = "global", fetcher: JsonFetcher | None = None
+    ) -> None:
         site = site.strip().lower()
         if not SITE_PATTERN.fullmatch(site):
             raise ValueError("Lever site names contain only letters, digits, '.', '-' and '_'.")

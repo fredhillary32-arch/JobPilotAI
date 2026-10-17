@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.db import Base, DatabaseSession
 from app.api.v1.dependencies import (
     AuthenticatedSession,
     get_authenticated_session,
     require_authenticated_resource_access,
 )
+from app.db import Base, DatabaseSession
 from app.models import (
     CandidateCertification,
     CandidateEducation,
@@ -21,20 +21,20 @@ from app.models import (
 )
 from app.schemas.candidate_profile import (
     CandidateCertificationCreate,
-    CandidateCertificationUpdate,
     CandidateCertificationRead,
+    CandidateCertificationUpdate,
     CandidateEducationCreate,
-    CandidateEducationUpdate,
     CandidateEducationRead,
+    CandidateEducationUpdate,
     CandidateProfileCreate,
     CandidateProfileRead,
     CandidateProfileUpdate,
     CandidateSkillCreate,
-    CandidateSkillUpdate,
     CandidateSkillRead,
+    CandidateSkillUpdate,
     CandidateWorkExperienceCreate,
-    CandidateWorkExperienceUpdate,
     CandidateWorkExperienceRead,
+    CandidateWorkExperienceUpdate,
 )
 
 router = APIRouter(
@@ -106,10 +106,7 @@ def _commit_skill(session: DatabaseSession) -> None:
         is_duplicate = (
             constraint_name == "uq_candidate_skills_profile_name_ci"
             or "uq_candidate_skills_profile_name_ci" in message
-            or (
-                "candidate_skills.candidate_profile_id" in message
-                and "candidate_skills.normalized_name" in message
-            )
+            or ("candidate_skills.candidate_profile_id" in message and "candidate_skills.normalized_name" in message)
         )
         if not is_duplicate:
             raise
@@ -209,9 +206,7 @@ def get_work_experience(
     session: DatabaseSession,
 ) -> CandidateWorkExperience:
     get_profile_or_404(session, profile_id)
-    return _get_owned_record(
-        session, CandidateWorkExperience, profile_id, record_id, "Work experience"
-    )
+    return _get_owned_record(session, CandidateWorkExperience, profile_id, record_id, "Work experience")
 
 
 @router.post(
@@ -246,9 +241,7 @@ def update_work_experience(
     session: DatabaseSession,
 ) -> CandidateWorkExperience:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateWorkExperience, profile_id, record_id, "Work experience"
-    )
+    record = _get_owned_record(session, CandidateWorkExperience, profile_id, record_id, "Work experience")
     updates = payload.model_dump(exclude_unset=True)
     _validate_merged_dates(
         updates.get("start_date", record.start_date),
@@ -272,9 +265,7 @@ def delete_work_experience(
     session: DatabaseSession,
 ) -> None:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateWorkExperience, profile_id, record_id, "Work experience"
-    )
+    record = _get_owned_record(session, CandidateWorkExperience, profile_id, record_id, "Work experience")
     session.delete(record)
     session.commit()
 
@@ -304,9 +295,7 @@ def get_education(
     session: DatabaseSession,
 ) -> CandidateEducation:
     get_profile_or_404(session, profile_id)
-    return _get_owned_record(
-        session, CandidateEducation, profile_id, record_id, "Education record"
-    )
+    return _get_owned_record(session, CandidateEducation, profile_id, record_id, "Education record")
 
 
 @router.post(
@@ -341,9 +330,7 @@ def update_education(
     session: DatabaseSession,
 ) -> CandidateEducation:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateEducation, profile_id, record_id, "Education record"
-    )
+    record = _get_owned_record(session, CandidateEducation, profile_id, record_id, "Education record")
     updates = payload.model_dump(exclude_unset=True)
     _validate_merged_dates(
         updates.get("start_date", record.start_date),
@@ -366,9 +353,7 @@ def delete_education(
     session: DatabaseSession,
 ) -> None:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateEducation, profile_id, record_id, "Education record"
-    )
+    record = _get_owned_record(session, CandidateEducation, profile_id, record_id, "Education record")
     session.delete(record)
     session.commit()
 
@@ -481,9 +466,7 @@ def get_certification(
     session: DatabaseSession,
 ) -> CandidateCertification:
     get_profile_or_404(session, profile_id)
-    return _get_owned_record(
-        session, CandidateCertification, profile_id, record_id, "Certification"
-    )
+    return _get_owned_record(session, CandidateCertification, profile_id, record_id, "Certification")
 
 
 @router.post(
@@ -518,9 +501,7 @@ def update_certification(
     session: DatabaseSession,
 ) -> CandidateCertification:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateCertification, profile_id, record_id, "Certification"
-    )
+    record = _get_owned_record(session, CandidateCertification, profile_id, record_id, "Certification")
     updates = payload.model_dump(exclude_unset=True)
     _validate_merged_dates(
         updates.get("issue_date", record.issue_date),
@@ -545,8 +526,6 @@ def delete_certification(
     session: DatabaseSession,
 ) -> None:
     get_profile_or_404(session, profile_id)
-    record = _get_owned_record(
-        session, CandidateCertification, profile_id, record_id, "Certification"
-    )
+    record = _get_owned_record(session, CandidateCertification, profile_id, record_id, "Certification")
     session.delete(record)
     session.commit()

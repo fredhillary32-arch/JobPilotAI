@@ -3,12 +3,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
     Index,
-    JSON,
     Numeric,
     String,
     Text,
@@ -61,8 +61,7 @@ class JobListing(Base):
             name="ck_job_listing_source_status",
         ),
         CheckConstraint(
-            "stated_workplace_type IS NULL OR stated_workplace_type IN "
-            "('remote', 'hybrid', 'onsite')",
+            "stated_workplace_type IS NULL OR stated_workplace_type IN ('remote', 'hybrid', 'onsite')",
             name="ck_job_listing_workplace_type",
         ),
         CheckConstraint(
@@ -98,9 +97,7 @@ class JobListing(Base):
     description_text: Mapped[str | None] = mapped_column(Text)
     location_text: Mapped[str | None] = mapped_column(String(500))
     stated_workplace_type: Mapped[str | None] = mapped_column(String(20))
-    stated_countries: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list, server_default="[]"
-    )
+    stated_countries: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     application_deadline: Mapped[date | None] = mapped_column(Date)
@@ -111,17 +108,13 @@ class JobListing(Base):
     # JobPilot bookkeeping about the source record (not eligibility conclusions).
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     dedupe_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="active", server_default="active"
-    )
+    source_status: Mapped[str] = mapped_column(String(24), nullable=False, default="active", server_default="active")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # Set when a listing the source had dropped is seen again; it is not a new posting date.
     relisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
@@ -173,8 +166,15 @@ class JobDiscoveryRun(Base):
 
 LINK_KINDS = ("listing", "application")
 LINK_OUTCOMES = (
-    "reachable", "expired", "auth_required", "redirected_off_domain", "unverified_domain",
-    "insecure", "rate_limited", "broken", "unreachable",
+    "reachable",
+    "expired",
+    "auth_required",
+    "redirected_off_domain",
+    "unverified_domain",
+    "insecure",
+    "rate_limited",
+    "broken",
+    "unreachable",
 )
 
 

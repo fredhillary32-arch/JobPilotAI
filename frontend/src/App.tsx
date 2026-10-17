@@ -56,6 +56,12 @@ const navigation: { name: ViewName; label: string; icon: string }[] = [
 
 const configuredProfileId = import.meta.env.VITE_CANDIDATE_PROFILE_ID?.trim();
 
+type WorkspaceLoadState =
+  | { status: "idle" }
+  | { status: "loading"; profileId: string }
+  | { status: "loaded"; profileId: string; data: WorkspaceData }
+  | { status: "error"; profileId: string; message: string };
+
 export default function App() {
   const [profileId, setProfileId] = useState(
     "",
@@ -63,16 +69,23 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<"restoring" | "authenticated" | "anonymous" | "error">("restoring");
   const [authEmail, setAuthEmail] = useState("");
   const [authError, setAuthError] = useState("");
-  const [data, setData] = useState<WorkspaceData | null>(null);
+  const [workspaceLoad, setWorkspaceLoad] = useState<WorkspaceLoadState>({ status: "idle" });
   const [activeView, setActiveView] = useState<ViewName>("Dashboard");
   // Job preselected on the Tailored CVs page after importing a listing.
   const [cvJobId, setCvJobId] = useState("");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [pendingLabel, setPendingLabel] = useState("");
   const [blockedAttempt, setBlockedAttempt] = useState(false);
   const actionLock = useRef(false);
-  const [loadError, setLoadError] = useState("");
+  const currentWorkspace = workspaceLoad.status !== "idle" && workspaceLoad.profileId === profileId
+    ? workspaceLoad
+    : null;
+  const data = authStatus === "authenticated" && currentWorkspace?.status === "loaded"
+    ? currentWorkspace.data
+    : null;
+  const loadError = currentWorkspace?.status === "error" ? currentWorkspace.message : "";
+  const loading = authStatus === "authenticated" && Boolean(profileId) &&
+    (currentWorkspace === null || currentWorkspace.status === "loading");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
@@ -80,8 +93,7 @@ export default function App() {
       clearSessionCsrfToken();
       window.localStorage.removeItem("jobpilot.profileId");
       setProfileId("");
-      setData(null);
-      setLoadError("");
+      setWorkspaceLoad({ status: "idle" });
       setAuthEmail("");
       setAuthStatus("anonymous");
       setAuthError("");
@@ -90,15 +102,17 @@ export default function App() {
     api.restoreSession()
       .then((session) => {
         setAuthEmail(session.user.email);
-        setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+        const selectedProfileId = configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "";
+        setWorkspaceLoad(selectedProfileId ? { status: "loading", profileId: selectedProfileId } : { status: "idle" });
+        setProfileId(selectedProfileId);
         setAuthStatus("authenticated");
       })
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 401) {
           handleUnauthorized();
         } else {
-          setData(null);
           setProfileId("");
+          setWorkspaceLoad({ status: "idle" });
           setAuthStatus("error");
           setAuthError(errorMessage(error));
         }
@@ -107,32 +121,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (authStatus !== "authenticated") {
-      setData(null);
-      setLoading(authStatus === "restoring");
-      return;
-    }
-    if (!profileId) {
-      setData(null);
-      setLoading(false);
-      setLoadError("");
-      return;
-    }
+    if (authStatus !== "authenticated" || !profileId) return;
     let current = true;
-    setLoading(true);
-    setLoadError("");
     loadWorkspace(profileId)
       .then((workspace) => {
         if (current) {
-          setData(workspace);
-          setLoading(false);
+          setWorkspaceLoad({ status: "loaded", profileId, data: workspace });
         }
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setData(null);
-        setLoadError(errorMessage(error));
-        setLoading(false);
+        setWorkspaceLoad({ status: "error", profileId, message: errorMessage(error) });
       });
     return () => {
       current = false;
@@ -145,10 +144,14 @@ export default function App() {
     try {
       const session = await api.restoreSession();
       setAuthEmail(session.user.email);
-      setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+      const selectedProfileId = configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "";
+      setWorkspaceLoad(selectedProfileId ? { status: "loading", profileId: selectedProfileId } : { status: "idle" });
+      setProfileId(selectedProfileId);
       setAuthStatus("authenticated");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
+        setProfileId("");
+        setWorkspaceLoad({ status: "idle" });
         setAuthStatus("anonymous");
       } else {
         setAuthStatus("error");
@@ -162,7 +165,9 @@ export default function App() {
     try {
       const session = await api.login(email, password);
       setAuthEmail(session.user.email);
-      setProfileId(configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "");
+      const selectedProfileId = configuredProfileId || window.localStorage.getItem("jobpilot.profileId") || "";
+      setWorkspaceLoad(selectedProfileId ? { status: "loading", profileId: selectedProfileId } : { status: "idle" });
+      setProfileId(selectedProfileId);
       setAuthStatus("authenticated");
     } catch (error) {
       setAuthError(errorMessage(error));
@@ -182,7 +187,7 @@ export default function App() {
       clearSessionCsrfToken();
       window.localStorage.removeItem("jobpilot.profileId");
       setProfileId("");
-      setData(null);
+      setWorkspaceLoad({ status: "idle" });
       setAuthEmail("");
     }
   }
@@ -190,6 +195,7 @@ export default function App() {
   function selectProfile(id: string) {
     const normalizedId = id.trim();
     window.localStorage.setItem("jobpilot.profileId", normalizedId);
+    setWorkspaceLoad({ status: "loading", profileId: normalizedId });
     setProfileId(normalizedId);
     setActiveView("Dashboard");
     setActionError("");
@@ -199,8 +205,7 @@ export default function App() {
   function switchProfile() {
     window.localStorage.removeItem("jobpilot.profileId");
     setProfileId("");
-    setData(null);
-    setLoadError("");
+    setWorkspaceLoad({ status: "idle" });
     setActionError("");
     setNotice("");
   }
@@ -224,14 +229,16 @@ export default function App() {
     try {
       const result = await action();
       // Report success only once the saved result is on screen.
-      if (profileId) setData(await loadWorkspace(profileId));
+      if (profileId) {
+        setWorkspaceLoad({ status: "loaded", profileId, data: await loadWorkspace(profileId) });
+      }
       if (success) setNotice(typeof success === "function" ? success(result) : success);
       return true;
     } catch (error) {
       setActionError(shortMessage(error));
       if (profileId && !(error instanceof ApiError && error.status === 401)) {
         try {
-          setData(await loadWorkspace(profileId));
+          setWorkspaceLoad({ status: "loaded", profileId, data: await loadWorkspace(profileId) });
         } catch (refreshError) {
           setActionError(
             `${errorMessage(error)} Workspace refresh also failed: ${errorMessage(refreshError)}`,

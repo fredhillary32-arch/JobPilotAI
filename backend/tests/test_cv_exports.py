@@ -23,8 +23,7 @@ ACHIEVEMENTS = [
     "Improved database query performance by analyzing slow request patterns.",
 ]
 JOB_DESCRIPTION = (
-    "Platform engineer role. Required skills: AWS, Terraform. "
-    "Build reliable services and improve deployment workflows."
+    "Platform engineer role. Required skills: AWS, Terraform. Build reliable services and improve deployment workflows."
 )
 SECTION_ORDER = [
     "Professional Summary",
@@ -90,28 +89,20 @@ def create_valid_draft(
     )
     assert job_response.status_code == 201
     job_id = job_response.json()["id"]
-    draft_response = client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job_id}/cv-drafts"
-    )
+    draft_response = client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts")
     assert draft_response.status_code == 201, draft_response.text
     return profile_id, job_id, draft_response.json()["id"], draft_response.json()["generated_content"]
 
 
 def export_path(profile_id: str, job_id: str, draft_id: str) -> str:
-    return (
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job_id}/cv-drafts/{draft_id}/exports"
-    )
+    return f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports"
 
 
 def test_pdf_and_docx_exports_preserve_section_order_bullets_and_unicode(
     api_client: TestClient,
     database,
 ) -> None:
-    profile_id, job_id, draft_id, original_draft_text = create_valid_draft(
-        api_client, database[1]
-    )
+    profile_id, job_id, draft_id, original_draft_text = create_valid_draft(api_client, database[1])
     source_bytes = "Original candidate CV content.".encode()
     uploaded = api_client.post(
         f"/api/v1/candidate-profiles/{profile_id}/documents",
@@ -136,16 +127,11 @@ def test_pdf_and_docx_exports_preserve_section_order_bullets_and_unicode(
         assert "storage_key" not in response.text
         assert "private-documents" not in response.text
 
-        download_url = (
-            export_path(profile_id, job_id, draft_id)
-            + f"/{metadata['id']}/download"
-        )
+        download_url = export_path(profile_id, job_id, draft_id) + f"/{metadata['id']}/download"
         download = api_client.get(download_url)
         assert download.status_code == 200
         assert download.headers["content-type"].startswith(metadata["media_type"])
-        assert download.headers["content-disposition"].endswith(
-            f'filename="{metadata["filename"]}"'
-        )
+        assert download.headers["content-disposition"].endswith(f'filename="{metadata["filename"]}"')
 
         if export_format == "pdf":
             pdf = pymupdf.open(stream=download.content, filetype="pdf")
@@ -171,28 +157,23 @@ def test_pdf_and_docx_exports_preserve_section_order_bullets_and_unicode(
             assert "Professional Summary" in body
             assert "—" not in body and "&" not in body
             bullet_paragraphs = [
-                paragraph
-                for paragraph in document.paragraphs
-                if paragraph.style.name == "List Bullet"
+                paragraph for paragraph in document.paragraphs if paragraph.style.name == "List Bullet"
             ]
             assert len(bullet_paragraphs) == 5
-            assert all(
-                len(paragraph.text.split()) >= 6 for paragraph in bullet_paragraphs
-            )
+            assert all(len(paragraph.text.split()) >= 6 for paragraph in bullet_paragraphs)
 
     assert exports[0]["id"] != exports[1]["id"]
     assert exports[0]["document_id"] != exports[1]["document_id"]
-    assert api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/cv-drafts/{draft_id}"
-    ).json()["generated_content"] == original_draft_text
-    assert api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/documents/"
-        f"{uploaded.json()['id']}/download"
-    ).content == source_bytes
+    assert (
+        api_client.get(f"/api/v1/candidate-profiles/{profile_id}/cv-drafts/{draft_id}").json()["generated_content"]
+        == original_draft_text
+    )
+    assert (
+        api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{uploaded.json()['id']}/download").content
+        == source_bytes
+    )
     listed = api_client.get(export_path(profile_id, job_id, draft_id))
-    assert {entry["id"] for entry in listed.json()} == {
-        entry["id"] for entry in exports
-    }
+    assert {entry["id"] for entry in listed.json()} == {entry["id"] for entry in exports}
 
 
 def test_failed_drafts_cannot_be_exported(
@@ -228,10 +209,7 @@ def test_failed_drafts_cannot_be_exported(
     )
     job_id = job_response.json()["id"]
     # Two supported bullets: the draft is saved as incomplete, never padded.
-    incomplete = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job_id}/cv-drafts"
-    )
+    incomplete = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job_id}/cv-drafts")
     assert incomplete.status_code == 201 and incomplete.json()["status"] == "needs_review"
     export = api_client.post(
         export_path(profile_id, job_id, incomplete.json()["id"]),
@@ -243,8 +221,12 @@ def test_failed_drafts_cannot_be_exported(
     # A draft that failed validation has no content and is never exported.
     with database[1]() as session:
         failed = TailoredCvDraft(
-            candidate_profile_id=UUID(profile_id), job_description_id=UUID(job_id), status="failed",
-            generated_content=None, structured_content=None, source_references=[],
+            candidate_profile_id=UUID(profile_id),
+            job_description_id=UUID(job_id),
+            status="failed",
+            generated_content=None,
+            structured_content=None,
+            source_references=[],
             validation_results={"is_valid": False, "errors": ["synthetic integrity error"], "gaps": [], "warnings": []},
         )
         session.add(failed)
@@ -267,9 +249,7 @@ def test_exports_reject_missing_and_mismatched_profile_job_draft_and_export_ids(
         export_path(profile_id, job_id, draft_id),
         json={"export_format": "pdf"},
     ).json()
-    other_profile = api_client.post(
-        "/api/v1/candidate-profiles", json={"name": "Other"}
-    ).json()["id"]
+    other_profile = api_client.post("/api/v1/candidate-profiles", json={"name": "Other"}).json()["id"]
 
     wrong_profile = api_client.post(
         export_path(other_profile, job_id, draft_id),
@@ -287,14 +267,8 @@ def test_exports_reject_missing_and_mismatched_profile_job_draft_and_export_ids(
         export_path(profile_id, job_id, draft_id),
         json={"export_format": "txt"},
     )
-    wrong_export_download = api_client.get(
-        export_path(other_profile, job_id, draft_id)
-        + f"/{export['id']}/download"
-    )
-    unknown_export_download = api_client.get(
-        export_path(profile_id, job_id, draft_id)
-        + f"/{uuid4()}/download"
-    )
+    wrong_export_download = api_client.get(export_path(other_profile, job_id, draft_id) + f"/{export['id']}/download")
+    unknown_export_download = api_client.get(export_path(profile_id, job_id, draft_id) + f"/{uuid4()}/download")
 
     assert wrong_profile.status_code == 404
     assert wrong_job.status_code == 404
@@ -329,10 +303,7 @@ def test_long_cv_paginates_readably_and_reports_pdf_pages(
     api_client: TestClient,
     database,
 ) -> None:
-    long_summary = " ".join(
-        "Developed reliable services and improved platform operations."
-        for _ in range(55)
-    )[:4990]
+    long_summary = " ".join("Developed reliable services and improved platform operations." for _ in range(55))[:4990]
     profile_id, job_id, draft_id, _ = create_valid_draft(
         api_client,
         database[1],
@@ -344,10 +315,7 @@ def test_long_cv_paginates_readably_and_reports_pdf_pages(
     )
     assert exported.status_code == 201
     assert exported.json()["page_count"] > 1
-    downloaded = api_client.get(
-        export_path(profile_id, job_id, draft_id)
-        + f"/{exported.json()['id']}/download"
-    )
+    downloaded = api_client.get(export_path(profile_id, job_id, draft_id) + f"/{exported.json()['id']}/download")
     pdf = pymupdf.open(stream=downloaded.content, filetype="pdf")
     assert pdf.page_count == exported.json()["page_count"]
     assert all(len(page.get_text()) > 0 for page in pdf)
@@ -373,10 +341,7 @@ def test_export_files_are_private_and_missing_file_is_reported(
     assert stored_files[0].suffix == ".docx"
 
     stored_files[0].unlink()
-    missing = api_client.get(
-        export_path(profile_id, job_id, draft_id)
-        + f"/{metadata['id']}/download"
-    )
+    missing = api_client.get(export_path(profile_id, job_id, draft_id) + f"/{metadata['id']}/download")
     assert missing.status_code == 404
     assert str(tmp_path) not in missing.text
 

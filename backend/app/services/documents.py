@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import BinaryIO
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 # Only original candidate uploads may become extracted text or evidence;
@@ -146,10 +146,7 @@ def validate_document(
 
 
 def is_candidate_source_document(document_kind: str, provenance: str) -> bool:
-    return (
-        document_kind in SOURCE_DOCUMENT_KINDS
-        and provenance in SOURCE_DOCUMENT_PROVENANCES
-    )
+    return document_kind in SOURCE_DOCUMENT_KINDS and provenance in SOURCE_DOCUMENT_PROVENANCES
 
 
 def get_document_storage() -> DocumentStorage:

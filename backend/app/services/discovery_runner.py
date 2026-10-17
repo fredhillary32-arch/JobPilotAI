@@ -13,11 +13,12 @@ this in a background thread so no page request waits on external sources.
 - A run row left "running" longer than STALE_AFTER is reported as interrupted;
   stored history is never rewritten.
 """
+
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-import threading
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -81,8 +82,11 @@ def effective_run_status(run: JobDiscoveryRun, now: datetime | None = None) -> s
 def last_success(session: Session, kind: str, key: str) -> JobDiscoveryRun | None:
     return session.scalar(
         select(JobDiscoveryRun)
-        .where(JobDiscoveryRun.source_kind == kind, JobDiscoveryRun.source_key == key,
-               JobDiscoveryRun.status == "succeeded")
+        .where(
+            JobDiscoveryRun.source_kind == kind,
+            JobDiscoveryRun.source_key == key,
+            JobDiscoveryRun.status == "succeeded",
+        )
         .order_by(JobDiscoveryRun.started_at.desc())
         .limit(1)
     )
@@ -144,25 +148,49 @@ def _run_one(factory, entry: SourceEntry, *, force: bool, full: bool, builder) -
             gap = getattr(source, "min_interval", None)
             if not force and gap and previous_at is not None and utc_now() - previous_at < gap:
                 minutes = int(gap.total_seconds() // 60)
-                return SourceOutcome(entry.id, "skipped",
-                                     f"ran at {previous_at:%H:%M} UTC; its terms ask for at least {minutes} minutes between passes")
+                return SourceOutcome(
+                    entry.id,
+                    "skipped",
+                    f"ran at {previous_at:%H:%M} UTC; its terms ask for at least {minutes} minutes between passes",
+                )
             if hasattr(source, "since"):
                 source.since = None if full else previous_at
             run = run_discovery(session, source)
     except Exception as error:  # noqa: BLE001 - one broken source must not stop the others
-        return SourceOutcome(entry.id, "error", f"failed with an internal error ({type(error).__name__}); other sources continue",
-                             error_category="internal_error")
+        return SourceOutcome(
+            entry.id,
+            "error",
+            f"failed with an internal error ({type(error).__name__}); other sources continue",
+            error_category="internal_error",
+        )
     if run.status != "succeeded":
-        return SourceOutcome(entry.id, "failed", f"failed ({run.error_category}); stored listings were not changed",
-                             run_id=str(run.id), error_category=run.error_category)
+        return SourceOutcome(
+            entry.id,
+            "failed",
+            f"failed ({run.error_category}); stored listings were not changed",
+            run_id=str(run.id),
+            error_category=run.error_category,
+        )
     reasons = dict(run.skip_reasons or {})
     detail = ", ".join(f"{reason}: {count}" for reason, count in sorted(reasons.items()))
-    message = (f"fetched {run.fetched_count}, new {run.created_count}, updated {run.updated_count}, "
-               f"unchanged {run.unchanged_count}, no longer listed {run.missing_count}, skipped {run.skipped_count}"
-               + (f" ({detail})" if detail else ""))
-    return SourceOutcome(entry.id, "succeeded", message, run_id=str(run.id), fetched=run.fetched_count,
-                         created=run.created_count, updated=run.updated_count, unchanged=run.unchanged_count,
-                         missing=run.missing_count, skipped=run.skipped_count, skip_reasons=reasons)
+    message = (
+        f"fetched {run.fetched_count}, new {run.created_count}, updated {run.updated_count}, "
+        f"unchanged {run.unchanged_count}, no longer listed {run.missing_count}, skipped {run.skipped_count}"
+        + (f" ({detail})" if detail else "")
+    )
+    return SourceOutcome(
+        entry.id,
+        "succeeded",
+        message,
+        run_id=str(run.id),
+        fetched=run.fetched_count,
+        created=run.created_count,
+        updated=run.updated_count,
+        unchanged=run.unchanged_count,
+        missing=run.missing_count,
+        skipped=run.skipped_count,
+        skip_reasons=reasons,
+    )
 
 
 def run_refresh_in_background(

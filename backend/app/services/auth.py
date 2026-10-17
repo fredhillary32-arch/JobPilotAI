@@ -1,13 +1,13 @@
-from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Final
 from uuid import UUID
 
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError
 from pydantic import EmailStr, TypeAdapter, ValidationError
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from app.models import CandidateProfile
@@ -81,13 +81,8 @@ def normalize_login_email(email: str) -> str:
 
 
 def validate_password(password: str) -> None:
-    if not isinstance(password, str) or not (
-        PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH
-    ):
-        raise ValueError(
-            f"Password must be between {PASSWORD_MIN_LENGTH} and "
-            f"{PASSWORD_MAX_LENGTH} characters."
-        )
+    if not isinstance(password, str) or not (PASSWORD_MIN_LENGTH <= len(password) <= PASSWORD_MAX_LENGTH):
+        raise ValueError(f"Password must be between {PASSWORD_MIN_LENGTH} and {PASSWORD_MAX_LENGTH} characters.")
 
 
 def hash_password(password: str) -> str:
@@ -123,9 +118,7 @@ def consume_pre_auth_challenge(
     now = utc_now() if now is None else now
     with session.begin():
         challenge = session.scalar(
-            select(PreAuthChallenge)
-            .where(PreAuthChallenge.token_hash == hash_token(token))
-            .with_for_update()
+            select(PreAuthChallenge).where(PreAuthChallenge.token_hash == hash_token(token)).with_for_update()
         )
         if challenge is None or challenge.consumed_at is not None:
             return False
@@ -182,15 +175,9 @@ def reset_password(session: Session, email: str, password: str) -> None:
         elif dialect_name == "sqlite":
             session.execute(text("BEGIN IMMEDIATE"))
         else:
-            raise UnsupportedAuthDatabaseError(
-                f"Password reset does not support the {dialect_name} database engine."
-            )
+            raise UnsupportedAuthDatabaseError(f"Password reset does not support the {dialect_name} database engine.")
 
-        user = session.scalar(
-            select(User)
-            .where(User.email == normalized_email)
-            .with_for_update()
-        )
+        user = session.scalar(select(User).where(User.email == normalized_email).with_for_update())
         if user is None:
             raise AccountNotFoundError("The requested account does not exist.")
 
@@ -216,15 +203,11 @@ def bootstrap_owner(session: Session, email: str, password: str) -> User:
         elif dialect_name == "sqlite":
             session.execute(text("BEGIN IMMEDIATE"))
         else:
-            raise UnsupportedAuthDatabaseError(
-                f"Owner bootstrap does not support the {dialect_name} database engine."
-            )
+            raise UnsupportedAuthDatabaseError(f"Owner bootstrap does not support the {dialect_name} database engine.")
 
         existing_user_id = session.scalar(select(User.id).limit(1))
         if existing_user_id is not None:
-            raise OwnerAlreadyExistsError(
-                "An owner account already exists; refusing to create another."
-            )
+            raise OwnerAlreadyExistsError("An owner account already exists; refusing to create another.")
 
         user = User(email=normalized_email, password_hash=password_hash)
         session.add(user)
@@ -262,9 +245,7 @@ def adopt_candidate_profiles(
             raise AccountNotFoundError("The requested account does not exist.")
 
         profiles_query = (
-            select(CandidateProfile)
-            .where(CandidateProfile.id.in_(profile_ids))
-            .order_by(CandidateProfile.id)
+            select(CandidateProfile).where(CandidateProfile.id.in_(profile_ids)).order_by(CandidateProfile.id)
         )
         if dialect_name == "postgresql":
             profiles_query = profiles_query.with_for_update()
@@ -272,9 +253,7 @@ def adopt_candidate_profiles(
         if len(profiles) != len(profile_ids):
             raise ProfilesNotFoundError("One or more candidate profiles were not found.")
         if any(profile.user_id is not None for profile in profiles):
-            raise ProfilesAlreadyAssignedError(
-                "One or more candidate profiles are already assigned."
-            )
+            raise ProfilesAlreadyAssignedError("One or more candidate profiles are already assigned.")
 
         for profile in profiles:
             profile.user_id = user.id

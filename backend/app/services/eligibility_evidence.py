@@ -5,6 +5,7 @@ location label. It never decides eligibility. Conflicts block a confirmation:
 a listing that excludes Kenya, or claims worldwide hiring while restricting
 locations elsewhere, cannot be recorded as accepting Kenya-based applicants.
 """
+
 import re
 
 from app.services.countries import countries_named_in

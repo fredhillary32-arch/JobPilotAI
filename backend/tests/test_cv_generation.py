@@ -73,10 +73,7 @@ def add_profile_material(
             achievements=achievements or ACHIEVEMENTS,
         )
         session.add(work)
-        session.add_all(
-            CandidateSkill(candidate_profile_id=profile.id, name=skill)
-            for skill in skills
-        )
+        session.add_all(CandidateSkill(candidate_profile_id=profile.id, name=skill) for skill in skills)
         session.add(
             CandidateEducation(
                 candidate_profile_id=profile.id,
@@ -132,10 +129,15 @@ def create_source_evidence(
         session.add(document)
         session.flush()
         # Evidence is only usable while its excerpt is in the current extraction.
-        session.add(DocumentExtraction(
-            source_document_id=document.id, status="succeeded", extracted_text="cv\n!",
-            character_count=4, extractor_version="stdlib/stdlib",
-        ))
+        session.add(
+            DocumentExtraction(
+                source_document_id=document.id,
+                status="succeeded",
+                extracted_text="cv\n!",
+                character_count=4,
+                extractor_version="stdlib/stdlib",
+            )
+        )
         evidence = CandidateEvidence(
             candidate_profile_id=UUID(profile_id),
             source_document_id=document.id,
@@ -159,10 +161,7 @@ def test_generated_draft_has_ordered_sections_five_supported_bullets_and_traceab
     profile_id = create_profile(api_client)
     work_id = add_profile_material(database[1], profile_id)
     job = create_job(api_client, profile_id)
-    generated = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    generated = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts")
 
     assert generated.status_code == 201, generated.text
     draft = generated.json()
@@ -179,25 +178,20 @@ def test_generated_draft_has_ordered_sections_five_supported_bullets_and_traceab
     assert role["work_experience_id"] == str(work_id)
     assert len(role["bullets"]) == 5
     assert all(bullet["source_references"] for bullet in role["bullets"])
-    assert all(
-        reference["source_id"]
-        for reference in draft["source_references"]
-    )
+    assert all(reference["source_id"] for reference in draft["source_references"])
     for section in structured["sections"]:
         assert all(claim["source_references"] for claim in section["claims"])
         for item in section["roles"]:
             assert item["source_references"]
             assert all(bullet["source_references"] for bullet in item["bullets"])
     assert "Terraform" not in draft["generated_content"]
-    assert "not supported by candidate-provided or confirmed information: Terraform" in (
-        draft["validation_results"]["gaps"][0]
+    assert (
+        "not supported by candidate-provided or confirmed information: Terraform"
+        in (draft["validation_results"]["gaps"][0])
     )
     assert draft["validation_results"]["is_valid"] is True
     assert structured["sections"][1]["claims"][0]["text"] == "AWS"
-    assert all(
-        reference["source_type"] != "candidate_evidence"
-        for reference in draft["source_references"]
-    )
+    assert all(reference["source_type"] != "candidate_evidence" for reference in draft["source_references"])
 
 
 def test_unreviewed_and_rejected_evidence_cannot_be_used(
@@ -213,18 +207,11 @@ def test_unreviewed_and_rejected_evidence_cannot_be_used(
     )
     unreviewed = "Resolved production incidents by tracing service failures."
     rejected = "Improved platform performance by rewriting all services."
-    unreviewed_id = create_source_evidence(
-        database[1], profile_id, description=unreviewed, status="unreviewed"
-    )
-    rejected_id = create_source_evidence(
-        database[1], profile_id, description=rejected, status="rejected"
-    )
+    unreviewed_id = create_source_evidence(database[1], profile_id, description=unreviewed, status="unreviewed")
+    rejected_id = create_source_evidence(database[1], profile_id, description=rejected, status="rejected")
     job = create_job(api_client, profile_id)
 
-    response = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    response = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts")
     # Three supported bullets: saved as incomplete; the unreviewed and rejected evidence is never used.
     assert response.status_code == 201
     detail = response.json()
@@ -256,10 +243,7 @@ def test_confirmed_evidence_can_fill_role_and_is_referenced(
         status="candidate_confirmed",
     )
     job = create_job(api_client, profile_id)
-    response = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    response = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts")
 
     assert response.status_code == 201
     draft = response.json()
@@ -271,9 +255,7 @@ def test_confirmed_evidence_can_fill_role_and_is_referenced(
     assert final_bullet["source_references"][0]["source_id"] == str(evidence_id)
     assert final_bullet["source_references"][0]["source_document_id"]
     assert final_bullet["source_references"][0]["source_excerpt"] == "cv"
-    assert final_bullet["source_references"][0]["evidence_confirmation_status"] == (
-        "candidate_confirmed"
-    )
+    assert final_bullet["source_references"][0]["evidence_confirmation_status"] == ("candidate_confirmed")
 
 
 @pytest.mark.parametrize(
@@ -299,15 +281,10 @@ def test_prohibited_punctuation_fails_and_persists_validation(
     )
     job = create_job(api_client, profile_id)
 
-    response = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    response = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts")
     assert response.status_code == 422
     assert expected_error in str(response.json()["detail"]["validation_results"])
-    drafts = api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/cv-drafts"
-    ).json()
+    drafts = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/cv-drafts").json()
     assert len(drafts) == 1
     assert drafts[0]["status"] == "failed"
     assert drafts[0]["validation_results"]["is_valid"] is False
@@ -325,10 +302,7 @@ def test_insufficient_evidence_returns_actionable_role_error_and_no_content(
         description=None,
     )
     job = create_job(api_client, profile_id)
-    response = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    response = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts")
 
     # Missing evidence is an actionable issue on a saved, incomplete draft, not a dead end.
     assert response.status_code == 201
@@ -337,7 +311,11 @@ def test_insufficient_evidence_returns_actionable_role_error_and_no_content(
     (issue,) = draft["validation_results"]["issues"]
     assert issue["group"] == "experience_evidence" and issue["role"] == "Platform Engineer at Northstar Systems"
     assert "2 supported bullets" in issue["message"] and "will not invent" in issue["action"]
-    role = next(section for section in draft["structured_content"]["sections"] if section["heading"] == "Professional Experience")["roles"][0]
+    role = next(
+        section
+        for section in draft["structured_content"]["sections"]
+        if section["heading"] == "Professional Experience"
+    )["roles"][0]
     # Only the two supported bullets: nothing was added to reach five.
     assert len(role["bullets"]) == 2
 
@@ -356,24 +334,19 @@ def test_multiple_drafts_preserve_profile_and_original_uploaded_document(
     )
     assert uploaded.status_code == 201
     job = create_job(api_client, profile_id)
-    url = (
-        f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
-    )
+    url = f"/api/v1/candidate-profiles/{profile_id}/job-descriptions/{job['id']}/cv-drafts"
     first = api_client.post(url)
     second = api_client.post(url)
 
     assert first.status_code == second.status_code == 201
     assert first.json()["id"] != second.json()["id"]
-    assert api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/documents/"
-        f"{uploaded.json()['id']}/download"
-    ).content == original
+    assert (
+        api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{uploaded.json()['id']}/download").content
+        == original
+    )
     profile = api_client.get(f"/api/v1/candidate-profiles/{profile_id}").json()
     assert profile["name"] == "Taylor Candidate"
-    assert len(api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/cv-drafts"
-    ).json()) == 2
+    assert len(api_client.get(f"/api/v1/candidate-profiles/{profile_id}/cv-drafts").json()) == 2
 
 
 def test_job_description_and_draft_resources_are_profile_scoped(
@@ -383,15 +356,10 @@ def test_job_description_and_draft_resources_are_profile_scoped(
     second_profile = create_profile(api_client, name="Another Candidate")
     job = create_job(api_client, first_profile)
     other_profile_job = api_client.post(
-        f"/api/v1/candidate-profiles/{second_profile}/job-descriptions/"
-        f"{job['id']}/cv-drafts"
+        f"/api/v1/candidate-profiles/{second_profile}/job-descriptions/{job['id']}/cv-drafts"
     )
-    missing_job = api_client.get(
-        f"/api/v1/candidate-profiles/{second_profile}/job-descriptions/{job['id']}"
-    )
-    missing_draft = api_client.get(
-        f"/api/v1/candidate-profiles/{second_profile}/cv-drafts/{uuid4()}"
-    )
+    missing_job = api_client.get(f"/api/v1/candidate-profiles/{second_profile}/job-descriptions/{job['id']}")
+    missing_draft = api_client.get(f"/api/v1/candidate-profiles/{second_profile}/cv-drafts/{uuid4()}")
     missing_profile = api_client.post(
         f"/api/v1/candidate-profiles/{uuid4()}/job-descriptions",
         json={"job_title": "Engineer", "description": "Build reliable systems."},
@@ -429,10 +397,7 @@ def test_validator_enforces_section_order_and_claim_sources() -> None:
                 "claim_text": "Candidate",
             }
         ],
-        sections=[
-            {"heading": heading, "claims": [], "roles": []}
-            for heading in reversed(EXPECTED_SECTION_ORDER)
-        ],
+        sections=[{"heading": heading, "claims": [], "roles": []} for heading in reversed(EXPECTED_SECTION_ORDER)],
     )
     errors = validate_cv_content(content, "Candidate\nEngineer")
     assert any("section order" in error for error in errors)

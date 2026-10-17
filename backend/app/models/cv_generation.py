@@ -1,14 +1,14 @@
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -18,6 +18,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate_document import CandidateDocument
+    from app.models.candidate_profile import CandidateProfile
 
 # "needs_review": the content is sound but incomplete (for example a role with fewer
 # than five supported bullets); it is saved for review and exported only after the
@@ -72,9 +76,7 @@ class CandidateJobDescription(Base):
         server_default=func.now(),
     )
 
-    candidate_profile: Mapped["CandidateProfile"] = relationship(
-        back_populates="job_descriptions"
-    )
+    candidate_profile: Mapped["CandidateProfile"] = relationship(back_populates="job_descriptions")
     cv_drafts: Mapped[list["TailoredCvDraft"]] = relationship(
         back_populates="job_description",
         overlaps="candidate_profile",
@@ -123,9 +125,7 @@ class TailoredCvDraft(Base):
     job_description_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     generated_content: Mapped[str | None] = mapped_column(Text)
-    structured_content: Mapped[dict | None] = mapped_column(
-        JSON(none_as_null=True)
-    )
+    structured_content: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     validation_results: Mapped[dict] = mapped_column(JSON, nullable=False)
     source_references: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -187,6 +187,4 @@ class TailoredCvExport(Base):
     )
 
     cv_draft: Mapped[TailoredCvDraft] = relationship(back_populates="exports")
-    document: Mapped["CandidateDocument"] = relationship(
-        overlaps="cv_draft,exports"
-    )
+    document: Mapped["CandidateDocument"] = relationship(overlaps="cv_draft,exports")

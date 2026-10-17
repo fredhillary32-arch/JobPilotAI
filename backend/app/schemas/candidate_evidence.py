@@ -39,11 +39,7 @@ class CandidateEvidenceCreate(BaseModel):
             raise ValueError("source_start and source_end must be provided together")
         if self.source_start is None and self.source_excerpt is None:
             raise ValueError("A source excerpt or source offsets are required")
-        if (
-            self.source_start is not None
-            and self.source_end is not None
-            and self.source_end <= self.source_start
-        ):
+        if self.source_start is not None and self.source_end is not None and self.source_end <= self.source_start:
             raise ValueError("source_end must be greater than source_start")
         return self
 
@@ -66,11 +62,7 @@ class CandidateEvidenceUpdate(BaseModel):
                 raise ValueError(f"{field_name} must not be null")
         if (self.source_start is None) != (self.source_end is None):
             raise ValueError("source_start and source_end must be provided together")
-        if (
-            self.source_start is not None
-            and self.source_end is not None
-            and self.source_end <= self.source_start
-        ):
+        if self.source_start is not None and self.source_end is not None and self.source_end <= self.source_start:
             raise ValueError("source_end must be greater than source_start")
         return self
 

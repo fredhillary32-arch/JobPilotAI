@@ -879,7 +879,7 @@ function WorkExperienceEditor({
       location: optionalText(values, "location"),
       work_arrangement: optionalText(values, "work_arrangement") as WorkExperienceInput["work_arrangement"],
       start_date: textValue(values, "start_date"),
-      end_date: Boolean(values.current_role) ? null : optionalText(values, "end_date"),
+      end_date: values.current_role ? null : optionalText(values, "end_date"),
       current_role: Boolean(values.current_role),
       description: optionalText(values, "description"),
       achievements: textValue(values, "achievements").split("\n").map((item) => item.trim()).filter(Boolean),

@@ -10,8 +10,15 @@ EvidenceField = Literal["description", "location"]
 StatementScope = Literal["role", "company", "team", "market_or_customer", "unclear"]
 RoleApplicability = Literal["direct", "established_by_wording", "unclear", "not_applicable"]
 GeographicScope = Literal[
-    "kenya_named", "africa", "emea", "worldwide", "other_countries", "restricted",
-    "conflicting", "unclear", "awaiting_employer",
+    "kenya_named",
+    "africa",
+    "emea",
+    "worldwide",
+    "other_countries",
+    "restricted",
+    "conflicting",
+    "unclear",
+    "awaiting_employer",
 ]
 SCOPES_BY_OUTCOME = {
     "eligible_confirmed": ("kenya_named", "africa", "emea", "worldwide"),

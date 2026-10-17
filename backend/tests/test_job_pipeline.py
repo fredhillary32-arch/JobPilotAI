@@ -1,4 +1,5 @@
 """Job pipeline queues, strict Kenya filtering and application preparation (never submission)."""
+
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -26,19 +27,45 @@ SUPPORT_TEXT = (
 )
 
 
-def add_listing(factory, *, title="IT Support Specialist", location="Nairobi, Kenya", description=SUPPORT_TEXT,
-                source_key="gitlab", category="direct_employer", status="active", posted=NOW - timedelta(hours=3),
-                first_seen=NOW, verified=NOW, dedupe=None, application_url="https://job-boards.greenhouse.io/gitlab/jobs/1",
-                workplace=None, deadline=None) -> str:
+def add_listing(
+    factory,
+    *,
+    title="IT Support Specialist",
+    location="Nairobi, Kenya",
+    description=SUPPORT_TEXT,
+    source_key="gitlab",
+    category="direct_employer",
+    status="active",
+    posted=NOW - timedelta(hours=3),
+    first_seen=NOW,
+    verified=NOW,
+    dedupe=None,
+    application_url="https://job-boards.greenhouse.io/gitlab/jobs/1",
+    workplace=None,
+    deadline=None,
+) -> str:
     with factory.begin() as session:
         item = JobListing(
-            source_kind="greenhouse", source_key=source_key, source_listing_id=str(uuid4()),
+            source_kind="greenhouse",
+            source_key=source_key,
+            source_listing_id=str(uuid4()),
             source_url="https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true",
-            listing_url=application_url, application_url=application_url, employer_name="GitLab", title=title,
-            description_text=description, location_text=location, source_category=category,
-            content_hash=uuid4().hex * 2, dedupe_key=dedupe or uuid4().hex * 2, source_status=status,
-            posted_at=posted, first_seen_at=min(first_seen, verified), last_seen_at=verified, last_verified_at=verified,
-            stated_workplace_type=workplace, application_deadline=deadline,
+            listing_url=application_url,
+            application_url=application_url,
+            employer_name="GitLab",
+            title=title,
+            description_text=description,
+            location_text=location,
+            source_category=category,
+            content_hash=uuid4().hex * 2,
+            dedupe_key=dedupe or uuid4().hex * 2,
+            source_status=status,
+            posted_at=posted,
+            first_seen_at=min(first_seen, verified),
+            last_seen_at=verified,
+            last_verified_at=verified,
+            stated_workplace_type=workplace,
+            application_deadline=deadline,
         )
         session.add(item)
         session.flush()
@@ -46,19 +73,32 @@ def add_listing(factory, *, title="IT Support Specialist", location="Nairobi, Ke
 
 
 def candidate(client: TestClient, factory) -> str:
-    profile_id = client.post(API, json={
-        "name": "Amina Wanjiru", "professional_headline": "IT Support Specialist", "contact_email": "amina@example.com",
-        "summary": "Service desk analyst who keeps staff productive with fast, well documented fixes."}).json()["id"]
+    profile_id = client.post(
+        API,
+        json={
+            "name": "Amina Wanjiru",
+            "professional_headline": "IT Support Specialist",
+            "contact_email": "amina@example.com",
+            "summary": "Service desk analyst who keeps staff productive with fast, well documented fixes.",
+        },
+    ).json()["id"]
     with factory() as session:
-        session.add(CandidateWorkExperience(
-            candidate_profile_id=UUID(profile_id), employer="Savanna Telecom", job_title="IT Support Officer",
-            start_date=date(2019, 1, 1), current_role=True, achievements=[
-                "Troubleshot Windows laptops for 300 staff across two offices",
-                "Managed Active Directory accounts for new starters and leavers",
-                "Documented common fixes so repeat tickets dropped across the service desk",
-                "Configured standard software on Windows laptops before issue to staff",
-                "Monitored Microsoft 365 licence usage and reported monthly costs to finance",
-            ]))
+        session.add(
+            CandidateWorkExperience(
+                candidate_profile_id=UUID(profile_id),
+                employer="Savanna Telecom",
+                job_title="IT Support Officer",
+                start_date=date(2019, 1, 1),
+                current_role=True,
+                achievements=[
+                    "Troubleshot Windows laptops for 300 staff across two offices",
+                    "Managed Active Directory accounts for new starters and leavers",
+                    "Documented common fixes so repeat tickets dropped across the service desk",
+                    "Configured standard software on Windows laptops before issue to staff",
+                    "Monitored Microsoft 365 licence usage and reported monthly costs to finance",
+                ],
+            )
+        )
         session.add(CandidateSkill(candidate_profile_id=UUID(profile_id), name="Active Directory"))
         session.commit()
     return profile_id
@@ -86,9 +126,15 @@ def test_listings_are_sorted_into_separate_queues_with_reasons(api_client: TestC
     assert result["counts"] == {"auto_apply": 0, "needs_action": 1, "review_needed": 2, "not_eligible": 1}
     ready = card(result, eligible)
     assert ready["queue"] == "needs_action" and ready["eligibility"]["state"] == "eligible"
-    assert ready["reasons"][0]["code"] == "manual_submission" and "employer's private API key" in ready["reasons"][0]["message"]
+    assert (
+        ready["reasons"][0]["code"] == "manual_submission"
+        and "employer's private API key" in ready["reasons"][0]["message"]
+    )
     assert "submit it yourself" in ready["next_step"]
-    assert ready["application_method"]["submission"] == "manual_submission" and ready["application_method"]["candidate_steps"]
+    assert (
+        ready["application_method"]["submission"] == "manual_submission"
+        and ready["application_method"]["candidate_steps"]
+    )
     assert ready["fit"]["essential_total"] >= 1 and ready["fit"]["score"] is not None
     assert card(result, remote)["queue"] == "review_needed"
     assert card(result, unregistered)["reasons"][0]["code"] == "unregistered_source"
@@ -116,9 +162,16 @@ def test_expired_stale_duplicate_unsafe_and_tracked_listings_are_excluded(api_cl
     copy = add_listing(factory, dedupe=shared, category="aggregator", source_key="canonical")
     result = pipeline(api_client, profile_id)
 
-    codes = {listing_id: [r["code"] for r in card(result, listing_id)["reasons"]] for listing_id in (gone, past_deadline, stale, unsafe, copy)}
+    codes = {
+        listing_id: [r["code"] for r in card(result, listing_id)["reasons"]]
+        for listing_id in (gone, past_deadline, stale, unsafe, copy)
+    }
     assert codes[gone] == ["no_longer_listed"] and codes[past_deadline] == ["deadline_passed"]
-    assert codes[stale] == ["stale_listing"] and codes[unsafe] == ["unsafe_application_link"] and codes[copy] == ["duplicate"]
+    assert (
+        codes[stale] == ["stale_listing"]
+        and codes[unsafe] == ["unsafe_application_link"]
+        and codes[copy] == ["duplicate"]
+    )
     assert card(result, preferred)["queue"] == "needs_action"
 
     prepared = api_client.post(f"{API}/{profile_id}/job-listings/{preferred}/prepare-application")
@@ -132,15 +185,25 @@ def test_work_arrangement_and_authorization_use_only_confirmed_facts(api_client:
     factory = database[1]
     profile_id = candidate(api_client, factory)
     onsite = add_listing(factory, workplace="onsite")
-    needs_auth = add_listing(factory, location="Home based - Worldwide", description=SUPPORT_TEXT + "You must be authorized to work in the United Kingdom.")
+    needs_auth = add_listing(
+        factory,
+        location="Home based - Worldwide",
+        description=SUPPORT_TEXT + "You must be authorized to work in the United Kingdom.",
+    )
     before = pipeline(api_client, profile_id)
     assert card(before, onsite)["queue"] == "needs_action"  # no confirmed preference yet: nothing is assumed
     assert card(before, needs_auth)["eligibility"]["state"] == "needs_candidate_input"
     assert "United Kingdom" in card(before, needs_auth)["next_step"]
 
-    confirmed = api_client.put(f"{API}/{profile_id}/eligibility-details", json={
-        "confirmed": True, "country_of_residence": "KE", "accepted_work_arrangements": ["remote"],
-        "work_authorizations": [{"country_code": "GB", "status": "not_authorized"}]})
+    confirmed = api_client.put(
+        f"{API}/{profile_id}/eligibility-details",
+        json={
+            "confirmed": True,
+            "country_of_residence": "KE",
+            "accepted_work_arrangements": ["remote"],
+            "work_authorizations": [{"country_code": "GB", "status": "not_authorized"}],
+        },
+    )
     assert confirmed.status_code == 200, confirmed.text
     after = pipeline(api_client, profile_id)
     assert card(after, onsite)["reasons"][0]["code"] == "arrangement_not_accepted"
@@ -154,7 +217,11 @@ def test_freshness_uses_the_source_posting_date_not_discovery_date(api_client: T
     old_but_new_to_us = add_listing(factory, posted=NOW - timedelta(days=10), first_seen=NOW)
     undated = add_listing(factory, posted=None, first_seen=NOW)
     fresh = add_listing(factory, posted=NOW - timedelta(hours=2))
-    ids = {item["listing_id"] for items in pipeline(api_client, profile_id, posted_within_hours=24)["queues"].values() for item in items}
+    ids = {
+        item["listing_id"]
+        for items in pipeline(api_client, profile_id, posted_within_hours=24)["queues"].values()
+        for item in items
+    }
     assert fresh in ids and old_but_new_to_us not in ids and undated not in ids
 
 
@@ -171,7 +238,11 @@ def test_strict_kenya_listing_filter_never_returns_unverified_or_ineligible(api_
     assert review["total"] == 2 and all(item["kenya_eligibility"]["state"] == "unverified" for item in review["items"])
     everything = api_client.get("/api/v1/job-listings").json()
     assert everything["total"] == 4
-    assert {item["kenya_eligibility"]["state"] for item in everything["items"]} == {"eligible", "unverified", "ineligible"}
+    assert {item["kenya_eligibility"]["state"] for item in everything["items"]} == {
+        "eligible",
+        "unverified",
+        "ineligible",
+    }
 
 
 def test_prepare_application_builds_the_pack_and_never_submits(api_client: TestClient, database) -> None:
@@ -219,12 +290,21 @@ def test_prepare_refuses_listings_that_are_not_established_as_eligible(api_clien
 def test_unconfirmed_evidence_never_reaches_the_cv_or_cover_letter(api_client: TestClient, database) -> None:
     factory = database[1]
     profile_id = candidate(api_client, factory)
-    document = api_client.post(f"{API}/{profile_id}/documents", files={"file": ("cv.txt", b"Savanna Telecom notes", "text/plain")}).json()
+    document = api_client.post(
+        f"{API}/{profile_id}/documents", files={"file": ("cv.txt", b"Savanna Telecom notes", "text/plain")}
+    ).json()
     with factory() as session:
-        session.add(CandidateEvidence(
-            candidate_profile_id=UUID(profile_id), source_document_id=UUID(document["id"]), category="achievement",
-            description="Rebuilt the Savanna Telecom Active Directory forest for 9000 users",
-            source_excerpt="Savanna Telecom notes", source_section="Savanna Telecom", confirmation_status="unreviewed"))
+        session.add(
+            CandidateEvidence(
+                candidate_profile_id=UUID(profile_id),
+                source_document_id=UUID(document["id"]),
+                category="achievement",
+                description="Rebuilt the Savanna Telecom Active Directory forest for 9000 users",
+                source_excerpt="Savanna Telecom notes",
+                source_section="Savanna Telecom",
+                confirmation_status="unreviewed",
+            )
+        )
         session.commit()
     listing_id = add_listing(factory)
     pack = api_client.post(f"{API}/{profile_id}/job-listings/{listing_id}/prepare-application").json()

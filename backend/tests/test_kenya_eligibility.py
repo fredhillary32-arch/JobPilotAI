@@ -1,4 +1,5 @@
 """Strict Kenya eligibility decisions: fail closed, evidence-backed, never inferred."""
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -10,26 +11,59 @@ from app.services.kenya_eligibility import CandidateFacts, decide, decide_cached
 CHECKED = datetime(2026, 10, 17, 8, 0, tzinfo=UTC)
 
 
-def listing(*, location: str | None = "Remote", description: str = "Join our support team.", title: str = "IT Support Specialist",
-            source_key: str = "gitlab", category: str | None = "direct_employer", listing_url: str | None = "https://job-boards.greenhouse.io/gitlab/jobs/1",
-            application_url: str = "https://job-boards.greenhouse.io/gitlab/jobs/1") -> JobListing:
+def listing(
+    *,
+    location: str | None = "Remote",
+    description: str = "Join our support team.",
+    title: str = "IT Support Specialist",
+    source_key: str = "gitlab",
+    category: str | None = "direct_employer",
+    listing_url: str | None = "https://job-boards.greenhouse.io/gitlab/jobs/1",
+    application_url: str = "https://job-boards.greenhouse.io/gitlab/jobs/1",
+) -> JobListing:
     return JobListing(
-        id=uuid4(), source_kind="greenhouse", source_key=source_key, source_listing_id="1",
+        id=uuid4(),
+        source_kind="greenhouse",
+        source_key=source_key,
+        source_listing_id="1",
         source_url="https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true",
-        listing_url=listing_url, application_url=application_url, employer_name="GitLab", title=title,
-        description_text=description, location_text=location, source_category=category,
-        content_hash="0" * 64, dedupe_key="1" * 64, source_status="active",
-        first_seen_at=CHECKED, last_seen_at=CHECKED, last_verified_at=CHECKED,
+        listing_url=listing_url,
+        application_url=application_url,
+        employer_name="GitLab",
+        title=title,
+        description_text=description,
+        location_text=location,
+        source_category=category,
+        content_hash="0" * 64,
+        dedupe_key="1" * 64,
+        source_status="active",
+        first_seen_at=CHECKED,
+        last_seen_at=CHECKED,
+        last_verified_at=CHECKED,
     )
 
 
-def review(item: JobListing, outcome: str, quotation: str | None, *, field: str = "description",
-           examined_description: str | None = None) -> ListingEligibilityAssessment:
+def review(
+    item: JobListing,
+    outcome: str,
+    quotation: str | None,
+    *,
+    field: str = "description",
+    examined_description: str | None = None,
+) -> ListingEligibilityAssessment:
     return ListingEligibilityAssessment(
-        id=uuid4(), job_listing_id=item.id, outcome=outcome, explanation="Reviewed.", quotation=quotation,
-        evidence_field=field if quotation else None, statement_scope="role", role_applicability="direct",
+        id=uuid4(),
+        job_listing_id=item.id,
+        outcome=outcome,
+        explanation="Reviewed.",
+        quotation=quotation,
+        evidence_field=field if quotation else None,
+        statement_scope="role",
+        role_applicability="direct",
         examined_description=item.description_text if examined_description is None else examined_description,
-        examined_location=item.location_text, listing_content_hash=item.content_hash, assessed_at=CHECKED,
+        examined_location=item.location_text,
+        listing_content_hash=item.content_hash,
+        assessed_at=CHECKED,
     )
 
 
@@ -37,7 +71,11 @@ def test_official_listing_naming_kenya_is_eligible_with_traceable_evidence() -> 
     decision = decide(listing(location="Nairobi, Kenya"))
     assert decision["state"] == "eligible" and decision["rule"] == "location_label_names_kenya"
     evidence = decision["evidence"][0]
-    assert evidence["quotation"] == "Nairobi, Kenya" and evidence["field"] == "location" and "Kenya" in evidence["countries"]
+    assert (
+        evidence["quotation"] == "Nairobi, Kenya"
+        and evidence["field"] == "location"
+        and "Kenya" in evidence["countries"]
+    )
     assert decision["source_url"].startswith("https://") and decision["source_type"].startswith("greenhouse board")
     assert decision["checked_at"] == CHECKED and decision["explanation"]
 
@@ -75,11 +113,16 @@ def test_worldwide_label_is_eligible_but_not_with_a_conflicting_restriction() ->
 
 def test_role_scoped_worldwide_wording_counts_but_hedged_or_company_wording_does_not() -> None:
     assert decide(listing(description="Location: This is a globally remote role."))["state"] == "eligible"
-    assert decide(listing(description="While we hire almost anywhere in the world, we prefer US residents."))["state"] == "unverified"
+    assert (
+        decide(listing(description="While we hire almost anywhere in the world, we prefer US residents."))["state"]
+        == "unverified"
+    )
     assert decide(listing(description="Work from anywhere: our company has no borders or HQ."))["state"] == "unverified"
 
 
-@pytest.mark.parametrize("location", ["Remote, United States", "United States", "Spain; Portugal; South Africa", "Lagos", "North America"])
+@pytest.mark.parametrize(
+    "location", ["Remote, United States", "United States", "Spain; Portugal; South Africa", "Lagos", "North America"]
+)
 def test_locations_that_exclude_kenya_are_ineligible(location) -> None:
     decision = decide(listing(location=location))
     assert decision["state"] == "ineligible" and decision["rule"] == "location_label_excludes_kenya"
@@ -92,7 +135,10 @@ def test_us_only_wording_is_ineligible_even_with_template_global_text() -> None:
 
 
 def test_explicit_kenya_exclusion_and_titles_for_other_markets_are_ineligible() -> None:
-    assert decide(listing(description="Applicants based in Kenya are not eligible for this role."))["state"] == "ineligible"
+    assert (
+        decide(listing(description="Applicants based in Kenya are not eligible for this role."))["state"]
+        == "ineligible"
+    )
     titled = decide(listing(title="Account Executive, US", location="Remote"))
     assert titled["state"] == "ineligible" and titled["rule"] == "title_names_other_country"
 
@@ -107,7 +153,9 @@ def test_work_authorization_is_never_inferred_from_residence() -> None:
     item = listing(location="Home based - Worldwide", description=text)
     assert decide(item)["state"] == "needs_candidate_input"
     assert decide(item, facts=CandidateFacts(residence="KE"))["state"] == "needs_candidate_input"
-    assert decide(item, facts=CandidateFacts(residence="KE", authorizations={"GB": "authorized"}))["state"] == "eligible"
+    assert (
+        decide(item, facts=CandidateFacts(residence="KE", authorizations={"GB": "authorized"}))["state"] == "eligible"
+    )
     denied = decide(item, facts=CandidateFacts(residence="KE", authorizations={"GB": "not_authorized"}))
     assert denied["state"] == "ineligible" and denied["rule"] == "work_authorization_not_held"
 
@@ -151,5 +199,7 @@ def test_every_evidence_quotation_is_exact_source_text() -> None:
     for item in cases:
         decision = decide(item)
         for evidence in decision["evidence"] + decision["conflicts"]:
-            source = {"location": item.location_text, "description": item.description_text, "title": item.title}[evidence["field"]]
+            source = {"location": item.location_text, "description": item.description_text, "title": item.title}[
+                evidence["field"]
+            ]
             assert evidence["quotation"] in source

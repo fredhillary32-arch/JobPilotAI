@@ -5,6 +5,7 @@ Docs: https://developers.ashbyhq.com/docs/public-job-posting-api — GET
 postings. Only postings with ``isListed`` true are stored. ``publishedAt`` is
 the publication date Ashby reports; it is stored as the posting date.
 """
+
 import re
 from collections.abc import Callable
 from datetime import datetime
@@ -71,7 +72,7 @@ class AshbyJobBoardSource:
             if isinstance(extra, dict):
                 locations.append(_text(extra.get("location")))
         location_text = "; ".join(dict.fromkeys(item for item in locations if item)) or None
-        description = (_text(job.get("descriptionPlain")) or html_to_text(job.get("descriptionHtml")) or "")
+        description = _text(job.get("descriptionPlain")) or html_to_text(job.get("descriptionHtml")) or ""
         workplace = WORKPLACE.get(_text(job.get("workplaceType")).replace("-", "").lower())
         if workplace is None and job.get("isRemote") is True:
             workplace = "remote"

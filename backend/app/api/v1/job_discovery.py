@@ -5,6 +5,7 @@ operator CLI) and returns at once; no page request waits on external sites.
 Nothing about the candidate is sent to any source: adapters only read public
 feeds. Requires an authenticated session and the session's CSRF token.
 """
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -36,17 +37,23 @@ def start_refresh(body: RefreshRequest, session: DatabaseSession) -> dict:
     registry = {entry.id: entry for entry in load_registry()}
     unknown = [item for item in body.sources if item not in registry]
     if unknown:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Unknown source(s): {', '.join(unknown)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Unknown source(s): {', '.join(unknown)}"
+        )
     chosen = [registry[item] for item in dict.fromkeys(body.sources)] or [e for e in registry.values() if e.enabled]
     manual = [entry.id for entry in chosen if not entry.enabled]
     if manual:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                            detail=f"Manual-only sources are never fetched: {', '.join(manual)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Manual-only sources are never fetched: {', '.join(manual)}",
+        )
     factory = sessionmaker(bind=session.get_bind(), autoflush=False, expire_on_commit=False)
     try:
         state = run_refresh_in_background(factory, chosen, full=body.full)
     except DiscoveryBusy:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A discovery pass is already running.") from None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="A discovery pass is already running."
+        ) from None
     return state.as_dict()
 
 

@@ -16,7 +16,9 @@ class _Fields(BaseModel):
     @model_validator(mode="after")
     def example_for_use(self):
         if getattr(self, "response", None) == "used_in_role" and not getattr(self, "example", None):
-            raise ValueError("Describe, in your own words, how you used it: an example is required for 'used in a role or project'.")
+            raise ValueError(
+                "Describe, in your own words, how you used it: an example is required for 'used in a role or project'."
+            )
         if getattr(self, "response", None) in {"not_possessed", "unsure"} and (
             getattr(self, "example", None) or getattr(self, "work_experience_id", None)
         ):

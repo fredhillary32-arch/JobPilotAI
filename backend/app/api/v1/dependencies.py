@@ -1,14 +1,11 @@
-from dataclasses import dataclass
-from datetime import timedelta
-import hashlib
 import hmac
+from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 from app.db import DatabaseSession
 from app.models import CandidateProfile
@@ -77,17 +74,13 @@ def get_authenticated_session(
     try:
         with session.begin():
             auth_session = session.scalar(
-                select(AuthSession)
-                .where(AuthSession.token_hash == hash_token(raw_token))
-                .with_for_update()
+                select(AuthSession).where(AuthSession.token_hash == hash_token(raw_token)).with_for_update()
             )
             if auth_session is not None:
                 user = session.get(User, auth_session.user_id)
                 if auth_session.revoked_at is None and user is not None and user.is_active:
                     idle_expiry = normalize_database_datetime(auth_session.idle_expires_at)
-                    absolute_expiry = normalize_database_datetime(
-                        auth_session.absolute_expires_at
-                    )
+                    absolute_expiry = normalize_database_datetime(auth_session.absolute_expires_at)
                     if idle_expiry > now and absolute_expiry > now:
                         auth_session.last_seen_at = now
                         auth_session.idle_expires_at = min(
@@ -117,11 +110,7 @@ def get_authenticated_session(
         raw_token,
         max_age=max(
             1,
-            int(
-                (
-                    normalize_database_datetime(auth_session.idle_expires_at) - now
-                ).total_seconds()
-            ),
+            int((normalize_database_datetime(auth_session.idle_expires_at) - now).total_seconds()),
         ),
         httponly=True,
         secure=settings.auth_cookie_secure or request.url.scheme == "https",
@@ -176,20 +165,20 @@ def require_authenticated_resource_access(
     if profile_id_value is None:
         return
     try:
-        profile_id = (
-            profile_id_value
-            if isinstance(profile_id_value, UUID)
-            else UUID(str(profile_id_value))
-        )
+        profile_id = profile_id_value if isinstance(profile_id_value, UUID) else UUID(str(profile_id_value))
     except ValueError:
         profile_id = None
 
-    if profile_id is None or session.scalar(
-        select(CandidateProfile.id).where(
-            CandidateProfile.id == profile_id,
-            CandidateProfile.user_id == authenticated.user.id,
+    if (
+        profile_id is None
+        or session.scalar(
+            select(CandidateProfile.id).where(
+                CandidateProfile.id == profile_id,
+                CandidateProfile.user_id == authenticated.user.id,
+            )
         )
-    ) is None:
+        is None
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Candidate profile not found",

@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 from collections.abc import Generator
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -217,9 +217,7 @@ def test_pre_auth_challenge_is_one_time_and_expiring(auth_client) -> None:
     assert expired_cookie is not None
     with factory.begin() as session:
         challenge = session.scalar(
-            select(PreAuthChallenge).where(
-                PreAuthChallenge.token_hash == hash_token(expired_token)
-            )
+            select(PreAuthChallenge).where(PreAuthChallenge.token_hash == hash_token(expired_token))
         )
         assert challenge is not None
         challenge.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -415,7 +413,13 @@ def test_one_accounts_failures_do_not_lock_out_another_account_on_the_same_clien
 
 def test_email_variants_share_one_failure_count(auth_client) -> None:
     client, _ = auth_client
-    for variant in ["owner@example.com", "Owner@Example.com", " owner@example.com ", "OWNER@EXAMPLE.COM", "owner@example.com"]:
+    for variant in [
+        "owner@example.com",
+        "Owner@Example.com",
+        " owner@example.com ",
+        "OWNER@EXAMPLE.COM",
+        "owner@example.com",
+    ]:
         assert _login(client, variant, "incorrect but long password").status_code == 401
 
     assert _login(client, "Owner@example.com", "incorrect but long password").status_code == 429

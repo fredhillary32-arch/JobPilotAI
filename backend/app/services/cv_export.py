@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Literal
@@ -25,7 +24,6 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Spacer,
 )
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -41,11 +39,11 @@ from app.models import (
 )
 from app.models.skill_confirmation import CLAIMABLE_RESPONSES, CandidateSkillConfirmation
 from app.schemas.cv_generation import CVSourceReference, CVStructuredContent
+from app.services.cv_export_checks import verify_export
 from app.services.cv_generation import render_cv
 from app.services.cv_validation import validate_cv_content
-from app.services.cv_export_checks import verify_export
-from app.services.evidence_integrity import current_texts, is_current
 from app.services.documents import DocumentStorage, DocumentStorageError
+from app.services.evidence_integrity import current_texts, is_current
 
 ExportFormat = Literal["pdf", "docx"]
 MEDIA_TYPES: dict[ExportFormat, str] = {
@@ -76,13 +74,7 @@ def _clean(value: str) -> str:
 
 def _work_dates(experience: CandidateWorkExperience) -> str:
     start = experience.start_date.strftime("%b %Y")
-    end = (
-        "Present"
-        if experience.current_role
-        else experience.end_date.strftime("%b %Y")
-        if experience.end_date
-        else ""
-    )
+    end = "Present" if experience.current_role else experience.end_date.strftime("%b %Y") if experience.end_date else ""
     return f"{start} to {end}" if end else start
 
 
@@ -102,9 +94,7 @@ def _assert_reference_matches(
         }
         value = fields.get(reference.source_field)
         if reference.source_id != str(profile.id) or value is None:
-            raise InvalidDraftForExport(
-                "The CV draft references missing candidate profile information."
-            )
+            raise InvalidDraftForExport("The CV draft references missing candidate profile information.")
     elif reference.source_type == "skill":
         item = session.get(CandidateSkill, UUID(reference.source_id))
         value = item.name if item and item.candidate_profile_id == profile.id else None
@@ -123,9 +113,7 @@ def _assert_reference_matches(
             }
             if reference.source_field.startswith("achievements["):
                 try:
-                    index = int(
-                        reference.source_field.removeprefix("achievements[").removesuffix("]")
-                    )
+                    index = int(reference.source_field.removeprefix("achievements[").removesuffix("]"))
                     value = item.achievements[index]
                 except (ValueError, IndexError):
                     value = None
@@ -157,7 +145,12 @@ def _assert_reference_matches(
     elif reference.source_type == "skill_confirmation":
         # The candidate's own statement: it must still be active and say the same thing.
         item = session.get(CandidateSkillConfirmation, UUID(reference.source_id))
-        if item is None or item.candidate_profile_id != profile.id or item.status != "active"                 or item.response not in CLAIMABLE_RESPONSES:
+        if (
+            item is None
+            or item.candidate_profile_id != profile.id
+            or item.status != "active"
+            or item.response not in CLAIMABLE_RESPONSES
+        ):
             value = None
         else:
             value = {"skill_name": item.skill_name, "example": item.example}.get(reference.source_field)
@@ -181,8 +174,7 @@ def _assert_reference_matches(
 
     if value is None or _clean(str(value)) != _clean(reference.claim_text):
         raise InvalidDraftForExport(
-            "The CV draft contains a source reference that no longer matches "
-            "candidate data or confirmed evidence."
+            "The CV draft contains a source reference that no longer matches candidate data or confirmed evidence."
         )
 
 
@@ -207,15 +199,16 @@ def validate_saved_draft(
 
     try:
         content = CVStructuredContent.model_validate(draft.structured_content)
-        references = [
-            CVSourceReference.model_validate(item)
-            for item in draft.source_references
-        ]
+        references = [CVSourceReference.model_validate(item) for item in draft.source_references]
     except (TypeError, ValueError) as exc:
         raise InvalidDraftForExport("The saved CV draft has invalid structured content.") from exc
 
-    if draft.status == "needs_review" and not for_approval and not (
-        content.review and content.review.approval_status == "approved" and content.review.acknowledged_incomplete
+    if (
+        draft.status == "needs_review"
+        and not for_approval
+        and not (
+            content.review and content.review.approval_status == "approved" and content.review.acknowledged_incomplete
+        )
     ):
         raise InvalidDraftForExport(
             "This draft is incomplete. Add the missing evidence and generate it again, "
@@ -224,9 +217,7 @@ def validate_saved_draft(
     rendered = render_cv(content)
     errors = validate_cv_content(content, rendered)
     if errors or rendered != draft.generated_content:
-        raise InvalidDraftForExport(
-            "The saved CV draft no longer satisfies CV content validation."
-        )
+        raise InvalidDraftForExport("The saved CV draft no longer satisfies CV content validation.")
 
     profile = session.get(CandidateProfile, profile_id)
     if profile is None:
@@ -237,9 +228,7 @@ def validate_saved_draft(
         except (ValueError, TypeError) as exc:
             if isinstance(exc, InvalidDraftForExport):
                 raise
-            raise InvalidDraftForExport(
-                "The CV draft contains an invalid source reference."
-            ) from exc
+            raise InvalidDraftForExport("The CV draft contains an invalid source reference.") from exc
     return content, rendered
 
 
@@ -334,9 +323,7 @@ def render_pdf(content: CVStructuredContent) -> RenderedCv:
         if section.heading == "Professional Experience":
             for role in section.roles:
                 role_heading = Paragraph(
-                    _paragraph_text(
-                        f"{role.job_title} at {role.employer} | {role.dates}"
-                    ),
+                    _paragraph_text(f"{role.job_title} at {role.employer} | {role.dates}"),
                     role_style,
                 )
                 story.append(role_heading)
@@ -430,9 +417,7 @@ def render_docx(content: CVStructuredContent) -> RenderedCv:
                 role_paragraph = document.add_paragraph()
                 role_paragraph.paragraph_format.keep_with_next = True
                 role_paragraph.paragraph_format.space_before = Pt(4)
-                role_run = role_paragraph.add_run(
-                    f"{role.job_title} at {role.employer} | {role.dates}"
-                )
+                role_run = role_paragraph.add_run(f"{role.job_title} at {role.employer} | {role.dates}")
                 role_run.bold = True
                 role_run.font.name = "Calibri"
                 role_run.font.color.rgb = RGBColor(0, 0, 0)
@@ -481,9 +466,7 @@ def create_cv_export(
     # The file must read back as the approved text before it is stored.
     verification = verify_export(rendered.content, export_format, rendered_text)
     if not verification["ok"]:
-        raise InvalidDraftForExport(
-            "The exported file did not read back as the approved draft, so it was not saved."
-        )
+        raise InvalidDraftForExport("The exported file did not read back as the approved draft, so it was not saved.")
     export_id = uuid4()
     extension = export_format
     filename = f"jobpilot-cv-{export_id.hex}.{extension}"

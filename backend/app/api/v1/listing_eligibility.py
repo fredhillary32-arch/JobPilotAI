@@ -83,12 +83,15 @@ def record_eligibility_assessment(
         )
     evidence = eligibility_passages(listing.description_text, listing.location_text)
     if payload.outcome == "eligible_confirmed" and evidence["conflicts"]:
-        exclusion = next((p["sentence"] for p in evidence["passages"] if p["kind"] in ("kenya_exclusion", "residency_restriction")), None)
+        exclusion = next(
+            (p["sentence"] for p in evidence["passages"] if p["kind"] in ("kenya_exclusion", "residency_restriction")),
+            None,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"{evidence['conflicts'][0]} Record it as conflicting or not established"
-                + (f": \"{exclusion}\"" if exclusion else ".")
+                + (f': "{exclusion}"' if exclusion else ".")
             ),
         )
     quote_start = None
@@ -100,10 +103,7 @@ def record_eligibility_assessment(
         if quote_start < 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=(
-                    "The quotation must be copied exactly from the listing's "
-                    f"{payload.evidence_field} text."
-                ),
+                detail=(f"The quotation must be copied exactly from the listing's {payload.evidence_field} text."),
             )
     assessment = ListingEligibilityAssessment(
         job_listing_id=listing.id,

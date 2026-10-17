@@ -11,6 +11,7 @@ A confirmation records what the candidate says, never independent proof:
 
 Withdrawn confirmations are kept for history and never used.
 """
+
 from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
@@ -73,7 +74,9 @@ class CandidateSkillConfirmation(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     candidate_profile_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("candidate_profiles.id", ondelete="CASCADE"), nullable=False,
+        Uuid(as_uuid=True),
+        ForeignKey("candidate_profiles.id", ondelete="CASCADE"),
+        nullable=False,
     )
     # The saved job and requirement this answers; both empty for a skill recorded on its own.
     job_description_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
@@ -85,7 +88,8 @@ class CandidateSkillConfirmation(Base):
     proficiency_level: Mapped[str | None] = mapped_column(String(20))
     # The recorded role it was used in; the API checks it belongs to the same profile.
     work_experience_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("candidate_work_experiences.id", ondelete="SET NULL"),
+        Uuid(as_uuid=True),
+        ForeignKey("candidate_work_experiences.id", ondelete="SET NULL"),
     )
     project_name: Mapped[str | None] = mapped_column(String(200))
     example: Mapped[str | None] = mapped_column(Text)
@@ -93,5 +97,8 @@ class CandidateSkillConfirmation(Base):
     confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )

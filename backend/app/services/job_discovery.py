@@ -3,12 +3,13 @@
 Source adapters only translate a source's response into ``SourceListing`` facts.
 This module never infers values a source did not state.
 """
+
+import hashlib
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-import hashlib
-import json
 from typing import Protocol
 
 from sqlalchemy import select
@@ -158,9 +159,7 @@ def run_discovery(session: Session, source: JobSource, now: datetime | None = No
     fetch; a failed fetch leaves every stored listing untouched.
     """
     started = utc_now() if now is None else now
-    run = JobDiscoveryRun(
-        source_kind=source.kind, source_key=source.key, status="running", started_at=started
-    )
+    run = JobDiscoveryRun(source_kind=source.kind, source_key=source.key, status="running", started_at=started)
     session.add(run)
     session.commit()
 
@@ -199,9 +198,7 @@ def _reconcile(
     existing = {
         row.source_listing_id: row
         for row in session.scalars(
-            select(JobListing).where(
-                JobListing.source_kind == source.kind, JobListing.source_key == source.key
-            )
+            select(JobListing).where(JobListing.source_kind == source.kind, JobListing.source_key == source.key)
         )
     }
     for listing in fetched:

@@ -44,11 +44,7 @@ def _run_adoption(
     result = main(
         [
             "adopt-profiles",
-            *[
-                argument
-                for profile_id in profile_ids
-                for argument in ("--profile-id", profile_id)
-            ],
+            *[argument for profile_id in profile_ids for argument in ("--profile-id", profile_id)],
         ],
         input_fn=lambda _: next(prompts),
         output=output.append,
@@ -82,9 +78,7 @@ def test_profile_adoption_requires_explicit_ids_and_writes_audit_rows(database) 
         assert all(profile.user_id == owner.id for profile in adopted)
         audits = session.query(ProfileOwnershipAdoption).all()
         assert len(audits) == 2
-        assert {audit.candidate_profile_id for audit in audits} == {
-            profile.id for profile in profiles
-        }
+        assert {audit.candidate_profile_id for audit in audits} == {profile.id for profile in profiles}
         assert all(audit.previous_user_id is None for audit in audits)
         assert all(audit.new_user_id == owner.id for audit in audits)
         assert all(audit.actor_user_id == owner.id for audit in audits)
@@ -116,10 +110,7 @@ def test_profile_adoption_refuses_mixed_assigned_and_unassigned_ids_atomically(
     assert result == 1
     assert "already assigned" in output
     with factory() as session:
-        refreshed = [
-            session.get(CandidateProfile, profile.id)
-            for profile in profiles
-        ]
+        refreshed = [session.get(CandidateProfile, profile.id) for profile in profiles]
         assert refreshed[0] is not None and refreshed[0].user_id is not None
         assert refreshed[1] is not None and refreshed[1].user_id is None
         assert session.query(ProfileOwnershipAdoption).count() == 0

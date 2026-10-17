@@ -19,6 +19,7 @@ which the API reports as ``job_board``-sourced; it is never JobPilot's discovery
 time. Every listing links to the aggregator's canonical page, as their terms
 require. Nothing about the candidate is ever sent to these services.
 """
+
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -139,7 +140,9 @@ class JobicySource(AggregatorSource):
         salary_ok = len(currency) == 3 and currency.isalpha() and (low is None or high is None or high >= low)
         identifier = job.get("id")
         return SourceListing(
-            source_listing_id=str(identifier) if isinstance(identifier, (int, str)) and not isinstance(identifier, bool) else "",
+            source_listing_id=str(identifier)
+            if isinstance(identifier, (int, str)) and not isinstance(identifier, bool)
+            else "",
             source_url=source_url,
             listing_url=page or None,
             application_url=page,
@@ -153,7 +156,9 @@ class JobicySource(AggregatorSource):
             salary_min=low if salary_ok else None,
             salary_max=high if salary_ok else None,
             salary_currency=currency if salary_ok and (low or high) else None,
-            salary_period=(_text(job.get("salaryPeriod")).lower()[:20] or None) if salary_ok and (low or high) else None,
+            salary_period=(_text(job.get("salaryPeriod")).lower()[:20] or None)
+            if salary_ok and (low or high)
+            else None,
         )
 
 
@@ -221,7 +226,9 @@ class RemoteOkSource(AggregatorSource):
         apply = _https_on(job.get("apply_url"), self.page_hosts) or page
         identifier = job.get("id")
         return SourceListing(
-            source_listing_id=str(identifier) if isinstance(identifier, (int, str)) and not isinstance(identifier, bool) else "",
+            source_listing_id=str(identifier)
+            if isinstance(identifier, (int, str)) and not isinstance(identifier, bool)
+            else "",
             source_url=self.base_url,
             listing_url=page or None,
             application_url=apply,

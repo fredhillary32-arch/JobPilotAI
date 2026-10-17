@@ -1,6 +1,9 @@
 """ORM models registered with the shared SQLAlchemy metadata."""
 
 from app.db import Base
+from app.models.candidate_document import CandidateDocument
+from app.models.candidate_eligibility import CandidateEligibilityDetails, CandidateWorkAuthorization
+from app.models.candidate_evidence import CandidateEvidence
 from app.models.candidate_profile import (
     CandidateCertification,
     CandidateEducation,
@@ -8,15 +11,12 @@ from app.models.candidate_profile import (
     CandidateSkill,
     CandidateWorkExperience,
 )
-from app.models.candidate_document import CandidateDocument
-from app.models.candidate_eligibility import CandidateEligibilityDetails, CandidateWorkAuthorization
-from app.models.candidate_evidence import CandidateEvidence
-from app.models.document_extraction import DocumentExtraction
 from app.models.cv_generation import (
     CandidateJobDescription,
     TailoredCvDraft,
     TailoredCvExport,
 )
+from app.models.document_extraction import DocumentExtraction
 from app.models.eligibility import ListingEligibilityAssessment
 from app.models.job_application import JobApplication, JobApplicationEvent
 from app.models.job_listing import JobDiscoveryRun, JobListing, JobListingLinkCheck

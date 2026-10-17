@@ -39,9 +39,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_local_http_origin(self) -> "Settings":
         if self.auth_local_http and self.auth_allowed_origin != "http://127.0.0.1:5173":
-            raise ValueError(
-                "Local HTTP authentication requires the approved loopback browser origin."
-            )
+            raise ValueError("Local HTTP authentication requires the approved loopback browser origin.")
         return self
 
     @property

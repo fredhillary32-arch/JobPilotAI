@@ -1,7 +1,6 @@
-from collections.abc import Iterator
-
 import getpass
 import warnings
+from collections.abc import Iterator
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker

@@ -113,9 +113,7 @@ def list_applications(
     query = select(JobApplication).where(JobApplication.candidate_profile_id == profile_id)
     if status_filter is not None:
         query = query.where(JobApplication.status == status_filter)
-    return list(
-        session.scalars(query.order_by(JobApplication.updated_at.desc(), JobApplication.id))
-    )
+    return list(session.scalars(query.order_by(JobApplication.updated_at.desc(), JobApplication.id)))
 
 
 @router.post(
@@ -143,9 +141,7 @@ def create_application(
         candidate_profile_id=profile_id,
         **payload.model_dump(),
     )
-    application.events.append(
-        JobApplicationEvent(from_status=None, to_status=payload.status, occurred_at=utc_now())
-    )
+    application.events.append(JobApplicationEvent(from_status=None, to_status=payload.status, occurred_at=utc_now()))
     session.add(application)
     try:
         session.commit()
@@ -186,9 +182,7 @@ def update_application(
     application = _get_application_or_404(profile_id, application_id, session)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("cv_draft_id") is not None:
-        _require_usable_draft(
-            profile_id, application.job_description_id, changes["cv_draft_id"], session
-        )
+        _require_usable_draft(profile_id, application.job_description_id, changes["cv_draft_id"], session)
     for field, value in changes.items():
         setattr(application, field, value)
     session.commit()

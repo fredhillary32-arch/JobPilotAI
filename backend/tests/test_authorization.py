@@ -1,8 +1,8 @@
-from datetime import date, timedelta
 import importlib
 import pkgutil
 import re
 import secrets
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -59,9 +59,7 @@ def _create_foreign_resources(factory: sessionmaker[Session]) -> dict[str, UUID]
                 CandidateProfile(
                     id=ids["owner_profile"],
                     name="Owned synthetic profile",
-                    user_id=session.scalar(
-                        select(User.id).where(User.email == "test-owner@example.com")
-                    ),
+                    user_id=session.scalar(select(User.id).where(User.email == "test-owner@example.com")),
                 ),
                 CandidateProfile(
                     id=ids["foreign_profile"],
@@ -162,9 +160,7 @@ def _create_foreign_resources(factory: sessionmaker[Session]) -> dict[str, UUID]
 def test_anonymous_requests_are_rejected_for_each_resource_family(
     unauthenticated_client: TestClient,
 ) -> None:
-    profile_id, document_id, job_id, draft_id, export_id = (
-        str(uuid4()) for _ in range(5)
-    )
+    profile_id, document_id, job_id, draft_id, export_id = (str(uuid4()) for _ in range(5))
     requests = [
         ("GET", API),
         ("GET", f"{API}/{profile_id}"),
@@ -205,18 +201,15 @@ def test_anonymous_requests_are_rejected_for_each_resource_family(
         ("GET", f"{API}/{profile_id}/cv-drafts/{draft_id}"),
         (
             "GET",
-            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports",
+            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports",
         ),
         (
             "GET",
-            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports/{export_id}/download",
+            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports/{export_id}/download",
         ),
         (
             "POST",
-            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports",
+            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports",
             {"json": {}},
         ),
     ]
@@ -322,9 +315,7 @@ def test_every_resource_router_checks_origin_and_csrf_before_mutation(
     database: tuple[object, sessionmaker[Session]],
 ) -> None:
     _, factory = database
-    profile_id, record_id, document_id, job_id, draft_id = (
-        str(uuid4()) for _ in range(5)
-    )
+    profile_id, record_id, document_id, job_id, draft_id = (str(uuid4()) for _ in range(5))
     csrf_token = api_client.headers["X-CSRF-Token"]
     requests = [
         ("POST", API, {"json": {"name": "Synthetic"}}),
@@ -417,8 +408,7 @@ def test_every_resource_router_checks_origin_and_csrf_before_mutation(
         ),
         (
             "POST",
-            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports",
+            f"{API}/{profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports",
             {"json": {"export_format": "pdf"}},
         ),
     ]
@@ -696,19 +686,16 @@ def test_two_authenticated_users_cannot_read_change_or_delete_each_others_data(
         ("GET", f"{API}/{owned_profile_id}/cv-drafts/{draft_id}"),
         (
             "GET",
-            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports",
+            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports",
         ),
         (
             "POST",
-            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports",
+            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports",
             {"json": {"export_format": "pdf"}},
         ),
         (
             "GET",
-            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/"
-            f"{draft_id}/exports/{export_id}/download",
+            f"{API}/{owned_profile_id}/job-descriptions/{job_id}/cv-drafts/{draft_id}/exports/{export_id}/download",
         ),
     ]
     for method, path, *kwargs_args in requests:
@@ -757,20 +744,12 @@ def test_foreign_and_unassigned_profiles_are_not_found_across_resource_chains(
         f"{API}/{{profile}}/job-descriptions/{ids['job']}",
         f"{API}/{{profile}}/cv-drafts",
         f"{API}/{{profile}}/cv-drafts/{ids['draft']}",
-        (
-            f"{API}/{{profile}}/job-descriptions/{ids['job']}/cv-drafts/"
-            f"{ids['draft']}/exports"
-        ),
-        (
-            f"{API}/{{profile}}/job-descriptions/{ids['job']}/cv-drafts/"
-            f"{ids['draft']}/exports/{ids['export']}/download"
-        ),
+        (f"{API}/{{profile}}/job-descriptions/{ids['job']}/cv-drafts/{ids['draft']}/exports"),
+        (f"{API}/{{profile}}/job-descriptions/{ids['job']}/cv-drafts/{ids['draft']}/exports/{ids['export']}/download"),
     ]
     for profile_name in ("foreign_profile", "legacy_profile"):
         for template in paths:
-            response = api_client.get(
-                template.format(profile=ids[profile_name])
-            )
+            response = api_client.get(template.format(profile=ids[profile_name]))
             assert response.status_code == 404, (template, response.text)
             assert response.json() == {"detail": "Candidate profile not found"}
 
@@ -839,10 +818,7 @@ def test_private_file_access_requires_auth_and_traversal_stays_inaccessible(
         assert anonymous.status_code == 401
         assert resolved == []
 
-    foreign_path = (
-        f"{API}/{foreign_ids['foreign_profile']}/documents/"
-        f"{foreign_ids['document']}/download"
-    )
+    foreign_path = f"{API}/{foreign_ids['foreign_profile']}/documents/{foreign_ids['document']}/download"
     foreign = api_client.get(foreign_path)
     assert foreign.status_code == 404
     assert resolved == []

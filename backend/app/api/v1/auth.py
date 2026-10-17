@@ -7,10 +7,11 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.dependencies import (
-    AuthenticatedSession,
     SESSION_COOKIE_NAME,
+    AuthenticatedSession,
     clear_session_cookie,
     get_authenticated_session,
     require_allowed_origin,
@@ -30,14 +31,13 @@ from app.services.auth import (
     consume_pre_auth_challenge,
     create_auth_session,
     hash_token,
-    normalize_login_email,
     normalize_database_datetime,
+    normalize_login_email,
     utc_now,
     verify_login_password,
 )
 from app.services.login_limiter import login_failure_limiter
 from app.settings import Settings, get_settings
-from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 PRE_AUTH_COOKIE_NAME = "jobpilot_pre_auth"
@@ -149,17 +149,11 @@ def _authenticate_and_create_session(
                 if dialect_name == "sqlite":
                     session.execute(text("BEGIN IMMEDIATE"))
                 elif dialect_name != "postgresql":
-                    raise UnsupportedAuthDatabaseError(
-                        "Authentication does not support this database engine."
-                    )
+                    raise UnsupportedAuthDatabaseError("Authentication does not support this database engine.")
 
                 user: User | None = None
                 if normalized_email is not None:
-                    user = session.scalar(
-                        select(User)
-                        .where(User.email == normalized_email)
-                        .with_for_update()
-                    )
+                    user = session.scalar(select(User).where(User.email == normalized_email).with_for_update())
                 if not verify_login_password(login_request.password, user):
                     login_failure_limiter.record_failure(client_ip, account_key)
                     raise HTTPException(
@@ -221,9 +215,7 @@ def create_pre_auth_csrf(
     cookie_binding = secrets.token_urlsafe(32)
     try:
         with session.begin():
-            session.execute(
-                delete(PreAuthChallenge).where(PreAuthChallenge.expires_at <= now)
-            )
+            session.execute(delete(PreAuthChallenge).where(PreAuthChallenge.expires_at <= now))
             session.add(
                 PreAuthChallenge(
                     token_hash=hash_token(csrf_token),

@@ -1,14 +1,15 @@
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Computed,
     Date,
     DateTime,
     ForeignKey,
     Index,
-    JSON,
     String,
     UniqueConstraint,
     Uuid,
@@ -17,6 +18,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate_document import CandidateDocument
+    from app.models.candidate_evidence import CandidateEvidence
+    from app.models.cv_generation import CandidateJobDescription
+    from app.models.user import User
 
 
 class TimestampMixin:
@@ -38,8 +45,7 @@ class CandidateProfile(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("length(trim(name)) > 0", name="ck_candidate_profile_name"),
         CheckConstraint(
-            "remote_work_preference IS NULL OR remote_work_preference IN "
-            "('remote', 'hybrid', 'onsite', 'flexible')",
+            "remote_work_preference IS NULL OR remote_work_preference IN ('remote', 'hybrid', 'onsite', 'flexible')",
             name="ck_candidate_profile_remote_preference",
         ),
     )
@@ -132,8 +138,7 @@ class CandidateWorkExperience(TimestampMixin, Base):
             name="ck_work_experience_current_end_date",
         ),
         CheckConstraint(
-            "work_arrangement IS NULL OR work_arrangement IN "
-            "('remote', 'hybrid', 'onsite')",
+            "work_arrangement IS NULL OR work_arrangement IN ('remote', 'hybrid', 'onsite')",
             name="ck_work_experience_work_arrangement",
         ),
         Index("ix_candidate_work_experiences_profile_start", "candidate_profile_id", "start_date"),
@@ -165,9 +170,7 @@ class CandidateWorkExperience(TimestampMixin, Base):
         server_default="[]",
     )
 
-    candidate_profile: Mapped[CandidateProfile] = relationship(
-        back_populates="work_experiences"
-    )
+    candidate_profile: Mapped[CandidateProfile] = relationship(back_populates="work_experiences")
 
 
 class CandidateEducation(TimestampMixin, Base):
@@ -200,9 +203,7 @@ class CandidateEducation(TimestampMixin, Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date)
 
-    candidate_profile: Mapped[CandidateProfile] = relationship(
-        back_populates="education_records"
-    )
+    candidate_profile: Mapped[CandidateProfile] = relationship(back_populates="education_records")
 
 
 class CandidateSkill(TimestampMixin, Base):
@@ -210,8 +211,7 @@ class CandidateSkill(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("length(trim(name)) > 0", name="ck_candidate_skill_name"),
         CheckConstraint(
-            "proficiency_level IS NULL OR proficiency_level IN "
-            "('beginner', 'intermediate', 'advanced', 'expert')",
+            "proficiency_level IS NULL OR proficiency_level IN ('beginner', 'intermediate', 'advanced', 'expert')",
             name="ck_candidate_skill_proficiency",
         ),
         UniqueConstraint(
@@ -266,6 +266,4 @@ class CandidateCertification(TimestampMixin, Base):
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     expires_on: Mapped[date | None] = mapped_column(Date)
 
-    candidate_profile: Mapped[CandidateProfile] = relationship(
-        back_populates="certifications"
-    )
+    candidate_profile: Mapped[CandidateProfile] = relationship(back_populates="certifications")

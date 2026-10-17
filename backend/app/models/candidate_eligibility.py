@@ -46,9 +46,7 @@ class CandidateEligibilityDetails(Base):
     )
     country_of_residence: Mapped[str | None] = mapped_column(String(2))
     relocation_willingness: Mapped[str | None] = mapped_column(String(16))
-    relocation_countries: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list, server_default="[]"
-    )
+    relocation_countries: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     accepted_work_arrangements: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="[]"
     )
@@ -63,9 +61,7 @@ class CandidateWorkAuthorization(Base):
 
     __tablename__ = "candidate_work_authorizations"
     __table_args__ = (
-        UniqueConstraint(
-            "candidate_profile_id", "country_code", name="uq_candidate_work_authorization_country"
-        ),
+        UniqueConstraint("candidate_profile_id", "country_code", name="uq_candidate_work_authorization_country"),
         CheckConstraint(
             "status IN ('authorized', 'not_authorized')",
             name="ck_candidate_work_authorization_status",

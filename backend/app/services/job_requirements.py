@@ -19,6 +19,7 @@ truthfully show it, or "interview" for personal qualities and work style
 are better shown in an interview. ``key`` is a stable identifier derived from
 the source wording, so a candidate's answer stays attached to the requirement.
 """
+
 import hashlib
 import re
 from collections import Counter
@@ -26,9 +27,9 @@ from dataclasses import asdict, dataclass, field
 
 from app.services.ats_vocabulary import (
     CERTIFICATIONS,
+    DEGREE_NAMES,
     PAST_TENSE,
     THIRD_PERSON,
-    DEGREE_NAMES,
     content_words,
     degree_level,
     named_terms,
@@ -41,38 +42,116 @@ MAX_KEYWORDS = 25
 
 SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # How the team works: context for the candidate, never a requirement or a CV gap.
-    ("context", re.compile(r"\b(how we work|working (?:together|with (?:us|me|the founder|the team|our team))|our (?:culture|working style|ways? of working)|team culture|what to expect|what (?:it'?s|working here is) like|a day in the life|how we operate)\b", re.I)),
-    ("preferred", re.compile(r"\b(nice[- ]to[- ]haves?|preferred|bonus|desirable|a plus|plus points|extra credit|would be great|ideally)\b", re.I)),
-    ("essential", re.compile(r"\b(requirements?|required|must[- ]haves?|minimum|basic qualifications|what you('ll| will)? (need|bring)|what we('re| are) looking for|who you are|about you|you (have|bring|are)|qualifications|skills|experience|competencies|role (?:actually )?(?:demands|requires)|what (?:it|this role) takes)\b", re.I)),
-    ("responsibility", re.compile(r"\b(responsibilities|what you('ll| will) do|your role|the role|duties|day[- ]to[- ]day|in this role|key tasks|you will|your impact|what you('ll| will) be doing)\b", re.I)),
-    ("eligibility", re.compile(r"\b(location|work authori[sz]ation|eligibility|where you('ll| will)? work|remote policy)\b", re.I)),
-    ("descriptive", re.compile(r"\b(benefits|perks|about us|who we are|our (company|mission|values|team)|why (join|work)|compensation|salary|equal (employment )?opportunity|diversity|what we offer|how to apply|our offer|privacy|about the (team|company)|supports? [\w -]*employees|life at)\b", re.I)),
+    (
+        "context",
+        re.compile(
+            r"\b(how we work|working (?:together|with (?:us|me|the founder|the team|our team))|our (?:culture|working style|ways? of working)|team culture|what to expect|what (?:it'?s|working here is) like|a day in the life|how we operate)\b",
+            re.I,
+        ),
+    ),
+    (
+        "preferred",
+        re.compile(
+            r"\b(nice[- ]to[- ]haves?|preferred|bonus|desirable|a plus|plus points|extra credit|would be great|ideally)\b",
+            re.I,
+        ),
+    ),
+    (
+        "essential",
+        re.compile(
+            r"\b(requirements?|required|must[- ]haves?|minimum|basic qualifications|what you('ll| will)? (need|bring)|what we('re| are) looking for|who you are|about you|you (have|bring|are)|qualifications|skills|experience|competencies|role (?:actually )?(?:demands|requires)|what (?:it|this role) takes)\b",
+            re.I,
+        ),
+    ),
+    (
+        "responsibility",
+        re.compile(
+            r"\b(responsibilities|what you('ll| will) do|your role|the role|duties|day[- ]to[- ]day|in this role|key tasks|you will|your impact|what you('ll| will) be doing)\b",
+            re.I,
+        ),
+    ),
+    (
+        "eligibility",
+        re.compile(r"\b(location|work authori[sz]ation|eligibility|where you('ll| will)? work|remote policy)\b", re.I),
+    ),
+    (
+        "descriptive",
+        re.compile(
+            r"\b(benefits|perks|about us|who we are|our (company|mission|values|team)|why (join|work)|compensation|salary|equal (employment )?opportunity|diversity|what we offer|how to apply|our offer|privacy|about the (team|company)|supports? [\w -]*employees|life at)\b",
+            re.I,
+        ),
+    ),
 ]
-ESSENTIAL_WORDS = re.compile(r"\b(must|required|requirement|essential|mandatory|need to|needs to|you need|minimum of|at least)\b", re.I)
+ESSENTIAL_WORDS = re.compile(
+    r"\b(must|required|requirement|essential|mandatory|need to|needs to|you need|minimum of|at least)\b", re.I
+)
 # Outside a requirements section only unmistakable wording makes a sentence a
 # requirement; "maintain required standards" or "stock needs to be governed" are duties.
-STRONG_ESSENTIAL = re.compile(r"\b(you must|must (?:have|be|hold|possess)|(?:is|are) (?:required|essential|mandatory)|required:|minimum of|at least \d|\d+\+? years)\b", re.I)
-DUTY_VERBS = frozenset({
-    *PAST_TENSE, "oversee", "ensure", "own", "drive", "partner", "lead", "deliver", "build", "manage",
-    "maintain", "support", "articulate", "focus", "contribute", "collaborate", "act", "serve",
-    "champion", "define", "establish", "execute",
-})
-PREFERRED_WORDS = re.compile(r"\b(preferred|nice to have|a plus|is a bonus|bonus|desirable|ideally|advantageous|beneficial|would be great|not required|optional)\b", re.I)
+STRONG_ESSENTIAL = re.compile(
+    r"\b(you must|must (?:have|be|hold|possess)|(?:is|are) (?:required|essential|mandatory)|required:|minimum of|at least \d|\d+\+? years)\b",
+    re.I,
+)
+DUTY_VERBS = frozenset(
+    {
+        *PAST_TENSE,
+        "oversee",
+        "ensure",
+        "own",
+        "drive",
+        "partner",
+        "lead",
+        "deliver",
+        "build",
+        "manage",
+        "maintain",
+        "support",
+        "articulate",
+        "focus",
+        "contribute",
+        "collaborate",
+        "act",
+        "serve",
+        "champion",
+        "define",
+        "establish",
+        "execute",
+    }
+)
+PREFERRED_WORDS = re.compile(
+    r"\b(preferred|nice to have|a plus|is a bonus|bonus|desirable|ideally|advantageous|beneficial|would be great|not required|optional)\b",
+    re.I,
+)
 YEARS = re.compile(r"\b(\d{1,2})\s*(?:\+|plus)?\s*(?:(?:-|–|to)\s*(\d{1,2})\s*)?(?:\+\s*)?years?\b", re.I)
 CERTIFICATION_WORD = re.compile(r"\b(certifi(?:ed|cation|cations)|licen[cs]e[ds]?)\b", re.I)
 EQUIVALENT = re.compile(r"\bor equivalent\b|\bequivalent (practical |work |professional )?experience\b", re.I)
-EMPLOYMENT_TYPE = re.compile(r"\b(full[- ]time|part[- ]time|contract(?:or)?|freelance|temporary|permanent|internship|fixed[- ]term)\b", re.I)
-WORK_AUTH = re.compile(r"\b(authori[sz]ed to work|authori[sz]ation to work|right to work|work permit|work visa|eligible to work|visa sponsorship|sponsor)\b", re.I)
-LOCATION_WORDS = re.compile(r"\b(reside|residing|residents?|located in|based in|live in|living in|time ?zones?|overlap|relocat\w*|on-?site|hybrid|in[- ]office)\b", re.I)
+EMPLOYMENT_TYPE = re.compile(
+    r"\b(full[- ]time|part[- ]time|contract(?:or)?|freelance|temporary|permanent|internship|fixed[- ]term)\b", re.I
+)
+WORK_AUTH = re.compile(
+    r"\b(authori[sz]ed to work|authori[sz]ation to work|right to work|work permit|work visa|eligible to work|visa sponsorship|sponsor)\b",
+    re.I,
+)
+LOCATION_WORDS = re.compile(
+    r"\b(reside|residing|residents?|located in|based in|live in|living in|time ?zones?|overlap|relocat\w*|on-?site|hybrid|in[- ]office)\b",
+    re.I,
+)
 BULLET = re.compile(r"^\s*(?:[-*•▪◦●·]|\d{1,2}[.)])\s+")
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
 DUTY_START = re.compile(r"^(you will|you'll|you are going to)\b", re.I)
 INLINE_HEADING = re.compile(r"^([A-Z][A-Za-z '’/&-]{1,40}):\s+(\S.*)$")
 # Customer-facing and communication skills a CV can show through examples.
-COMMUNICATION = re.compile(r"\b(communicat\w*|rapport|empath\w*|written|writing|verbal|on calls|phone|video|presentation\w*|customer[- ]facing|explain\w*|listen\w*|de-?escalat\w*|relationship[- ]building)\b", re.I)
+COMMUNICATION = re.compile(
+    r"\b(communicat\w*|rapport|empath\w*|written|writing|verbal|on calls|phone|video|presentation\w*|customer[- ]facing|explain\w*|listen\w*|de-?escalat\w*|relationship[- ]building)\b",
+    re.I,
+)
 # Personal qualities and work style: real requirements, but evidenced in an interview.
-WORK_STYLE = re.compile(r"\b(ego|mindset|disagreement|urgency|resourceful\w*|count on you|reliab\w*|dependab\w*|minimal (?:instructions?|supervision|direction)|self[- ]starter|autonom\w*|adaptab\w*|positive|attitude|emotional intelligence|personally|offen[cs]e|proactive|owner'?s? mentality|curio\w*|humble|integrity|work ethic|hustle|initiative|team player|what you said|do what you|feedback without|thrive|composure|calm under)\b", re.I)
-FIELD_OF_STUDY = re.compile(r"\b(?:degree|diploma|bachelor'?s?|master'?s?|bsc|msc)\b[^.;,]{0,20}?\b(?:in|of)\s+([A-Z][A-Za-z&]+(?:\s+(?:[A-Z][A-Za-z&]+|and|or))*)")
+WORK_STYLE = re.compile(
+    r"\b(ego|mindset|disagreement|urgency|resourceful\w*|count on you|reliab\w*|dependab\w*|minimal (?:instructions?|supervision|direction)|self[- ]starter|autonom\w*|adaptab\w*|positive|attitude|emotional intelligence|personally|offen[cs]e|proactive|owner'?s? mentality|curio\w*|humble|integrity|work ethic|hustle|initiative|team player|what you said|do what you|feedback without|thrive|composure|calm under)\b",
+    re.I,
+)
+FIELD_OF_STUDY = re.compile(
+    r"\b(?:degree|diploma|bachelor'?s?|master'?s?|bsc|msc)\b[^.;,]{0,20}?\b(?:in|of)\s+([A-Z][A-Za-z&]+(?:\s+(?:[A-Z][A-Za-z&]+|and|or))*)"
+)
 
 
 @dataclass
@@ -138,7 +217,7 @@ def _units(description: str) -> list[_Unit]:
         offset += len(line) + 1
         if not line.strip():
             continue
-        next_line = next((candidate for candidate in lines[index + 1:] if candidate.strip()), None)
+        next_line = next((candidate for candidate in lines[index + 1 :] if candidate.strip()), None)
         if _looks_like_heading(line, next_line):
             heading = line.strip().rstrip(":").strip()
             section = _heading_kind(heading)
@@ -148,7 +227,7 @@ def _units(description: str) -> list[_Unit]:
             continue
         bullet = BULLET.match(line)
         body_start = line_start + (bullet.end() if bullet else len(line) - len(line.lstrip()))
-        body = description[body_start:line_start + len(line)].rstrip()
+        body = description[body_start : line_start + len(line)].rstrip()
         inline = INLINE_HEADING.match(body)
         if inline and not bullet and _heading_kind(inline.group(1)):
             # "Location: Remote in Kenya" labels only this line's text.
@@ -175,8 +254,12 @@ def _is_subheading(line: str, next_line: str | None, section: str | None) -> boo
     stripped = line.strip()
     if section != "responsibility" or BULLET.match(line) or not stripped or not next_line:
         return False
-    return (len(stripped.split()) <= 5 and stripped[-1] not in ".!?:;," and stripped[0].isupper()
-            and len(next_line.split()) >= 6)
+    return (
+        len(stripped.split()) <= 5
+        and stripped[-1] not in ".!?:;,"
+        and stripped[0].isupper()
+        and len(next_line.split()) >= 6
+    )
 
 
 def requirement_key(text: str) -> str:
@@ -227,17 +310,25 @@ def _eligibility(unit: _Unit) -> Requirement | None:
     countries = countries_named_in(unit.text)
     if WORK_AUTH.search(unit.text):
         kind = "Work authorization"
-    elif LOCATION_WORDS.search(unit.text) and (countries or re.search(r"time ?zone|overlap|relocat|on-?site|hybrid|in[- ]office", unit.text, re.I)):
+    elif LOCATION_WORDS.search(unit.text) and (
+        countries or re.search(r"time ?zone|overlap|relocat|on-?site|hybrid|in[- ]office", unit.text, re.I)
+    ):
         kind = "Location or working pattern"
     elif EMPLOYMENT_TYPE.search(unit.text) and len(unit.text.split()) <= 25:
         kind = "Employment type"
     else:
         return None
     return Requirement(
-        id="", category="eligibility", importance="not_scored",
+        id="",
+        category="eligibility",
+        importance="not_scored",
         basis="explicit" if ESSENTIAL_WORDS.search(unit.text) or unit.section == "eligibility" else "ambiguous",
-        text=kind, source_text=unit.text, source_start=unit.start, source_end=unit.end,
-        section=unit.heading, note="Eligibility is assessed separately from skills and never adds to the score.",
+        text=kind,
+        source_text=unit.text,
+        source_start=unit.start,
+        source_end=unit.end,
+        section=unit.heading,
+        note="Eligibility is assessed separately from skills and never adds to the score.",
     )
 
 
@@ -246,20 +337,39 @@ def _requirement_for(unit: _Unit, importance: str, basis: str) -> Requirement:
     years = YEARS.search(unit.text)
     level = degree_level(unit.text)
     base = dict(
-        importance=importance, basis=basis, source_text=unit.text, source_start=unit.start,
-        source_end=unit.end, section=unit.heading, terms=terms,
+        importance=importance,
+        basis=basis,
+        source_text=unit.text,
+        source_start=unit.start,
+        source_end=unit.end,
+        section=unit.heading,
+        terms=terms,
     )
     if years and re.search(r"experience|background|working|in (a|an) ", unit.text, re.I):
         minimum = int(years.group(1))
-        return Requirement(id="", category="experience", text=f"{minimum}+ years of relevant experience",
-                           min_years=minimum, allows_equivalent=False, **base)
-    if level and re.search(r"degree|diploma|bachelor|master|phd|doctorate|graduate|school|bsc|msc|mba", unit.text, re.I):
+        return Requirement(
+            id="",
+            category="experience",
+            text=f"{minimum}+ years of relevant experience",
+            min_years=minimum,
+            allows_equivalent=False,
+            **base,
+        )
+    if level and re.search(
+        r"degree|diploma|bachelor|master|phd|doctorate|graduate|school|bsc|msc|mba", unit.text, re.I
+    ):
         study = FIELD_OF_STUDY.search(unit.text)
         field_name = re.sub(r"(\s+(?:or|and))+$", "", study.group(1)).strip() if study else ""
         base["terms"] = [field_name.casefold()] if field_name else []
         label = f"{DEGREE_NAMES[level].capitalize()} or higher" + (f" in {field_name}" if field_name else "")
-        return Requirement(id="", category="education", text=label,
-                           degree_level=level, allows_equivalent=bool(EQUIVALENT.search(unit.text)), **base)
+        return Requirement(
+            id="",
+            category="education",
+            text=label,
+            degree_level=level,
+            allows_equivalent=bool(EQUIVALENT.search(unit.text)),
+            **base,
+        )
     certs = [term for term in terms if term in CERTIFICATIONS]
     if certs or CERTIFICATION_WORD.search(unit.text):
         return Requirement(id="", category="certification", text=unit.text, **base)
@@ -268,9 +378,15 @@ def _requirement_for(unit: _Unit, importance: str, basis: str) -> Requirement:
     if terms:
         return Requirement(id="", category="tool", text=unit.text, **base)
     if WORK_STYLE.search(unit.text):
-        return Requirement(id="", category="work_style", text=unit.text, cv_use="interview",
-                           note="A personal quality or way of working. Show it with an example in an interview; "
-                                "it is not scored as a CV skill.", **base)
+        return Requirement(
+            id="",
+            category="work_style",
+            text=unit.text,
+            cv_use="interview",
+            note="A personal quality or way of working. Show it with an example in an interview; "
+            "it is not scored as a CV skill.",
+            **base,
+        )
     return Requirement(id="", category="skill", text=unit.text, **base)
 
 
@@ -291,7 +407,9 @@ def extract_requirements(description: str, *, company: str | None = None) -> dic
         if unit.section == "descriptive":
             continue
         if unit.section == "context":
-            context.append({"text": unit.text, "section": unit.heading, "source_start": unit.start, "source_end": unit.end})
+            context.append(
+                {"text": unit.text, "section": unit.heading, "source_start": unit.start, "source_end": unit.end}
+            )
             continue
         words = frozenset(stem(word) for word in content_words(unit.text))
         if len(words) >= 3 and words in seen_words:
@@ -306,14 +424,26 @@ def extract_requirements(description: str, *, company: str | None = None) -> dic
         importance = _importance(unit)
         if importance:
             requirements.append(_requirement_for(unit, *importance))
-        elif (unit.section == "responsibility" or DUTY_START.match(unit.text.replace("’", "'"))
-              or (unit.section is None and _starts_with_duty(unit.text))):
+        elif (
+            unit.section == "responsibility"
+            or DUTY_START.match(unit.text.replace("’", "'"))
+            or (unit.section is None and _starts_with_duty(unit.text))
+        ):
             if len(content_words(unit.text)) >= 2:
-                requirements.append(Requirement(
-                    id="", category="responsibility", importance="not_scored", basis="explicit",
-                    text=unit.text, source_text=unit.text, source_start=unit.start,
-                    source_end=unit.end, section=unit.heading, terms=named_terms(unit.text),
-                ))
+                requirements.append(
+                    Requirement(
+                        id="",
+                        category="responsibility",
+                        importance="not_scored",
+                        basis="explicit",
+                        text=unit.text,
+                        source_text=unit.text,
+                        source_start=unit.start,
+                        source_end=unit.end,
+                        section=unit.heading,
+                        terms=named_terms(unit.text),
+                    )
+                )
             for term in named_terms(unit.text):
                 descriptive_tools[term] += 1
                 descriptive_first.setdefault(term, unit)
@@ -328,17 +458,28 @@ def extract_requirements(description: str, *, company: str | None = None) -> dic
         if term in stated_terms:
             continue
         unit = descriptive_first[term]
-        requirements.append(Requirement(
-            id="", category="tool", importance="preferred", basis="inferred", text=term,
-            source_text=unit.text, source_start=unit.start, source_end=unit.end,
-            section=unit.heading, terms=[term],
-            note="Named in the duties or description, not in a list of requirements.",
-        ))
+        requirements.append(
+            Requirement(
+                id="",
+                category="tool",
+                importance="preferred",
+                basis="inferred",
+                text=term,
+                source_text=unit.text,
+                source_start=unit.start,
+                source_end=unit.end,
+                section=unit.heading,
+                terms=[term],
+                note="Named in the duties or description, not in a list of requirements.",
+            )
+        )
 
     requirements = requirements[:MAX_REQUIREMENTS]
     for index, item in enumerate(requirements, start=1):
         item.id = f"r{index}"
-        item.key = requirement_key(item.source_text if item.category != "tool" or item.basis != "inferred" else f"tool:{item.text}")
+        item.key = requirement_key(
+            item.source_text if item.category != "tool" or item.basis != "inferred" else f"tool:{item.text}"
+        )
         if item.category == "eligibility":
             item.cv_use = "not_applicable"
     # Keywords come from the role itself, never from company, benefits or team-context text.
@@ -363,13 +504,17 @@ def extract_keywords(description: str, requirements: list[Requirement], *, compa
     company_words = {word.casefold() for word in (company or "").split()}
     scored: dict[str, dict] = {}
     requirement_text = " ".join(
-        item.source_text for item in requirements if item.importance in {"essential", "preferred"} or item.category == "responsibility"
+        item.source_text
+        for item in requirements
+        if item.importance in {"essential", "preferred"} or item.category == "responsibility"
     )
     essential_text = " ".join(item.source_text for item in requirements if item.importance == "essential")
     for term in named_terms(description):
         count = len(re.findall(rf"(?<![\w+#]){re.escape(term)}(?![\w+#])", description, re.I)) or 1
         scored[term] = {
-            "term": term, "count": count, "kind": "tool",
+            "term": term,
+            "count": count,
+            "kind": "tool",
             "importance": "high" if named_terms(essential_text).count(term) or count >= 3 else "medium",
         }
     stems: Counter[str] = Counter()
@@ -387,8 +532,13 @@ def extract_keywords(description: str, requirements: list[Requirement], *, compa
             continue
         if count >= 2 and key in requirement_stems:
             scored[word] = {
-                "term": word, "count": count, "kind": "term",
+                "term": word,
+                "count": count,
+                "kind": "term",
                 "importance": "high" if count >= 4 else "medium",
             }
-    ordered = sorted(scored.values(), key=lambda item: (item["importance"] != "high", item["kind"] != "tool", -item["count"], item["term"]))
+    ordered = sorted(
+        scored.values(),
+        key=lambda item: (item["importance"] != "high", item["kind"] != "tool", -item["count"], item["term"]),
+    )
     return ordered[:MAX_KEYWORDS]

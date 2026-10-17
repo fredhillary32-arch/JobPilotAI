@@ -16,9 +16,7 @@ ApplicationStatus = Literal[
     "withdrawn",
     "closed",
 ]
-InitialApplicationStatus = Literal[
-    "saved", "eligibility_review", "preparing", "ready_for_review", "applied"
-]
+InitialApplicationStatus = Literal["saved", "eligibility_review", "preparing", "ready_for_review", "applied"]
 ContactName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 ApplicationNotes = Annotated[str, StringConstraints(min_length=1, max_length=10_000)]
 EventNote = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]

@@ -18,22 +18,32 @@ export function DraftReview({ profileId, draft, busy, runAction }: {
   busy: boolean;
   runAction: RunAction;
 }) {
-  const [review, setReview] = useState<CvDraftReview | null>(null);
-  const [error, setError] = useState("");
+  const [result, setResult] = useState<{ key: string; review: CvDraftReview } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [attest, setAttest] = useState(false);
   const [acknowledgeIncomplete, setAcknowledgeIncomplete] = useState(false);
+  const key = JSON.stringify([profileId, draft.id, draft.status, draft.structured_content]);
+  const review = result?.key === key ? result.review : null;
+  const error = failure?.key === key ? failure.message : "";
 
   useEffect(() => {
     let current = true;
-    setReview(null);
-    setError("");
     api.getDraftReview(profileId, draft.id)
-      .then((value) => { if (current) setReview(value); })
-      .catch((caught: unknown) => { if (current) setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "The review could not be loaded."); });
+      .then((value) => { if (current) setResult({ key, review: value }); })
+      .catch((caught: unknown) => {
+        if (current) {
+          setFailure({
+            key,
+            message: caught instanceof ApiError || caught instanceof Error
+              ? caught.message
+              : "The review could not be loaded.",
+          });
+        }
+      });
     return () => { current = false; };
-  }, [profileId, draft]);
+  }, [profileId, draft, key]);
 
   if (error) return <p className="feedback-error setup-error" role="alert">{error}</p>;
   if (!review) return <p className="muted" role="status">Loading the review…</p>;

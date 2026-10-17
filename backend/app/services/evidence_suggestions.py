@@ -8,6 +8,7 @@ same document, whatever its review status, so repeated runs do not duplicate
 claims or bring back rejected ones. Contact details and sections that are not
 evidence of work (summary, references, interests) are skipped.
 """
+
 import re
 from dataclasses import dataclass
 
@@ -19,29 +20,76 @@ MAX_SKILL_SUGGESTIONS = 25
 MAX_LINE_CHARACTERS = 600
 
 SECTION_KINDS = {
-    "experience": {"experience", "work experience", "professional experience", "employment",
-                   "employment history", "work history", "career history", "relevant experience"},
+    "experience": {
+        "experience",
+        "work experience",
+        "professional experience",
+        "employment",
+        "employment history",
+        "work history",
+        "career history",
+        "relevant experience",
+    },
     "education": {"education", "education and training", "academic background", "academic qualifications"},
-    "skills": {"skills", "technical skills", "core skills", "key skills", "skills and tools", "tools",
-               "tools and platforms", "core competencies", "competencies", "technologies"},
-    "certifications": {"certifications", "certificates", "licenses and certifications",
-                       "licences and certifications", "training", "professional development", "qualifications"},
+    "skills": {
+        "skills",
+        "technical skills",
+        "core skills",
+        "key skills",
+        "skills and tools",
+        "tools",
+        "tools and platforms",
+        "core competencies",
+        "competencies",
+        "technologies",
+    },
+    "certifications": {
+        "certifications",
+        "certificates",
+        "licenses and certifications",
+        "licences and certifications",
+        "training",
+        "professional development",
+        "qualifications",
+    },
     "projects": {"projects", "key projects", "selected projects"},
     "achievements": {"achievements", "key achievements", "awards", "awards and achievements", "accomplishments"},
-    "ignore": {"summary", "profile", "professional summary", "personal statement", "objective", "about me",
-               "career objective", "references", "referees", "contact", "contact details", "personal details",
-               "personal information", "interests", "hobbies", "hobbies and interests", "languages",
-               "declaration"},
+    "ignore": {
+        "summary",
+        "profile",
+        "professional summary",
+        "personal statement",
+        "objective",
+        "about me",
+        "career objective",
+        "references",
+        "referees",
+        "contact",
+        "contact details",
+        "personal details",
+        "personal information",
+        "interests",
+        "hobbies",
+        "hobbies and interests",
+        "languages",
+        "declaration",
+    },
 }
 HEADING_KIND = {name: kind for kind, names in SECTION_KINDS.items() for name in names}
-CONTACT = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?://|www\.|linkedin\.com|github\.com|(?:\+?\d[\d ()-]{7,}\d)|\bp\.?\s?o\.?\s?box\b", re.I)
+CONTACT = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?://|www\.|linkedin\.com|github\.com|(?:\+?\d[\d ()-]{7,}\d)|\bp\.?\s?o\.?\s?box\b",
+    re.I,
+)
 BULLET = re.compile(r"^\s*(?:[-*•▪◦●·–]|\d{1,2}[.)])\s+")
 YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 METRIC = re.compile(r"\d[\d,.]*\s*(?:%|percent\b)|[$£€]\s?\d|\b(?:ksh|kes|usd)\s?\d|\b\d{2,}[\d,]*\b", re.I)
-ACHIEVEMENT_WORDS = re.compile(r"\b(achieved|awarded|won|recognised|recognized|exceeded|improved|increased|reduced|saved|cut|grew|launched|promoted)\b", re.I)
+ACHIEVEMENT_WORDS = re.compile(
+    r"\b(achieved|awarded|won|recognised|recognized|exceeded|improved|increased|reduced|saved|cut|grew|launched|promoted)\b",
+    re.I,
+)
 # A wrapped line continues the previous one only when that one ends mid-phrase.
 CONTINUES = re.compile(r"(?:,|\b(?:and|or|the|of|for|to|with|a|an|in|on|at|across|by|from|including))\s*$", re.I)
-SKILL_SPLIT =re.compile(r"\s*(?:,|;|\||•|·)\s*")
+SKILL_SPLIT = re.compile(r"\s*(?:,|;|\||•|·)\s*")
 VERBS = {verb.casefold() for verb in PAST_TENSE.values()} | set(PAST_TENSE) | set(THIRD_PERSON)
 
 
@@ -126,7 +174,7 @@ def suggest_evidence(text: str) -> tuple[list[Suggestion], bool]:
             body, body_start = line.text, line.start
             label = re.match(r"^[A-Za-z][\w &/-]{0,30}:\s*", body)
             if label:
-                body, body_start = body[label.end():], body_start + label.end()
+                body, body_start = body[label.end() :], body_start + label.end()
             cursor = 0
             for item in SKILL_SPLIT.split(body):
                 position = body.find(item, cursor)
@@ -151,17 +199,29 @@ def suggest_evidence(text: str) -> tuple[list[Suggestion], bool]:
         # Statements: experience, projects, achievements, or bullets under an unknown heading.
         end = line.end
         # Join wrapped continuation lines of a bullet (common in PDF text).
-        while (line.bulleted and index < len(lines) and not lines[index].bulleted
-               and not _heading(lines[index].text) and not CONTACT.search(lines[index].text)
-               and not lines[index].text.isupper() and not YEAR.search(lines[index].text)
-               and (lines[index].text[:1].islower() or lines[index].text[:1].isdigit()
-                    or CONTINUES.search(text[line.start:end])
-                    # "...using" / "Microsoft 365 ...": unfinished sentence, long non-verb line
-                    or (text[end - 1] not in ".!?;:" and len(lines[index].text.split()) >= 6
-                        and not _starts_with_verb(lines[index].text)))):
+        while (
+            line.bulleted
+            and index < len(lines)
+            and not lines[index].bulleted
+            and not _heading(lines[index].text)
+            and not CONTACT.search(lines[index].text)
+            and not lines[index].text.isupper()
+            and not YEAR.search(lines[index].text)
+            and (
+                lines[index].text[:1].islower()
+                or lines[index].text[:1].isdigit()
+                or CONTINUES.search(text[line.start : end])
+                # "...using" / "Microsoft 365 ...": unfinished sentence, long non-verb line
+                or (
+                    text[end - 1] not in ".!?;:"
+                    and len(lines[index].text.split()) >= 6
+                    and not _starts_with_verb(lines[index].text)
+                )
+            )
+        ):
             end = lines[index].end
             index += 1
-        excerpt = text[line.start:end]
+        excerpt = text[line.start : end]
         words = len(excerpt.split())
         if words < 5 or len(excerpt) > MAX_LINE_CHARACTERS:
             continue
@@ -203,17 +263,19 @@ def new_evidence_for(
         if (suggestion.start, suggestion.end) in taken_spans or _normalise(suggestion.excerpt) in taken_text:
             skipped += 1
             continue
-        if text[suggestion.start:suggestion.end] != suggestion.excerpt:
+        if text[suggestion.start : suggestion.end] != suggestion.excerpt:
             continue  # never store an excerpt that is not the exact source slice
-        records.append(CandidateEvidence(
-            candidate_profile_id=profile_id,
-            source_document_id=document_id,
-            category=suggestion.category,
-            description=" ".join(suggestion.excerpt.split())[:2000],
-            source_excerpt=suggestion.excerpt,
-            source_start=suggestion.start,
-            source_end=suggestion.end,
-            source_section=(suggestion.section or None) and suggestion.section[:200],
-            confirmation_status="unreviewed",
-        ))
+        records.append(
+            CandidateEvidence(
+                candidate_profile_id=profile_id,
+                source_document_id=document_id,
+                category=suggestion.category,
+                description=" ".join(suggestion.excerpt.split())[:2000],
+                source_excerpt=suggestion.excerpt,
+                source_start=suggestion.start,
+                source_end=suggestion.end,
+                source_section=(suggestion.section or None) and suggestion.section[:200],
+                confirmation_status="unreviewed",
+            )
+        )
     return records, skipped, limited

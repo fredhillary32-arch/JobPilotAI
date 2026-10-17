@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -16,6 +16,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate_document import CandidateDocument
+    from app.models.candidate_profile import CandidateProfile
 
 EvidenceCategory = Literal[
     "employment_responsibility",
@@ -51,8 +55,7 @@ class CandidateEvidence(Base):
         ),
         CheckConstraint("length(trim(description)) > 0", name="ck_candidate_evidence_description"),
         CheckConstraint(
-            "(source_start IS NULL AND source_end IS NULL) "
-            "OR (source_start >= 0 AND source_end > source_start)",
+            "(source_start IS NULL AND source_end IS NULL) OR (source_start >= 0 AND source_end > source_start)",
             name="ck_candidate_evidence_offsets",
         ),
         CheckConstraint(

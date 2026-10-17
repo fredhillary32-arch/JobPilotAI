@@ -5,13 +5,14 @@ available, so authentication is not required for any GET endpoints."
 The list endpoint documents ``updated_at`` but not a first-published date, so
 ``posted_at`` is only set when the response actually contains ``first_published``.
 """
+
+import json
+import re
+import socket
 from collections.abc import Callable
 from datetime import date, datetime
 from html import unescape
 from html.parser import HTMLParser
-import json
-import re
-import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -163,7 +164,9 @@ class GreenhouseBoardSource:
             # Greenhouse's posting page also hosts its application form.
             listing_url=str(job.get("absolute_url") or "").strip() or None,
             application_url=str(job.get("absolute_url") or "").strip(),
-            employer_name=company_name.strip() if isinstance(company_name, str) and company_name.strip() else self.employer_name,
+            employer_name=company_name.strip()
+            if isinstance(company_name, str) and company_name.strip()
+            else self.employer_name,
             title=str(job.get("title") or ""),
             description_text=html_to_text(job.get("content") if isinstance(job.get("content"), str) else None),
             location_text=location_name if isinstance(location_name, str) else None,

@@ -125,10 +125,7 @@ def _check_docx_resource_limits(data: bytes) -> None:
                     raise ExtractionFailure("resource_limit")
                 if entry.file_size and entry.compress_size == 0:
                     raise ExtractionFailure("resource_limit")
-                if (
-                    entry.compress_size
-                    and entry.file_size / entry.compress_size > MAX_DOCX_COMPRESSION_RATIO
-                ):
+                if entry.compress_size and entry.file_size / entry.compress_size > MAX_DOCX_COMPRESSION_RATIO:
                     raise ExtractionFailure("resource_limit")
     except ExtractionFailure:
         raise
@@ -151,18 +148,12 @@ def _extract_docx(data: bytes) -> str:
             elif isinstance(child, CT_Tbl):
                 table = Table(child, document)
                 for row in table.rows:
-                    cells = [
-                        " ".join(cell.text.splitlines()).strip()
-                        for cell in row.cells
-                    ]
+                    cells = [" ".join(cell.text.splitlines()).strip() for cell in row.cells]
                     row_text = "\t".join(cell for cell in cells if cell)
                     if row_text:
                         blocks.append(row_text)
                         character_count += len(row_text)
-            if (
-                character_count + max(0, len(blocks) - 1) * 2
-                > MAX_EXTRACTED_CHARACTERS
-            ):
+            if character_count + max(0, len(blocks) - 1) * 2 > MAX_EXTRACTED_CHARACTERS:
                 raise ExtractionFailure("resource_limit")
         return "\n\n".join(blocks)
     except ExtractionFailure:
@@ -212,8 +203,7 @@ def extract_document_text(
     if media_type == "application/pdf" and path.suffix.lower() == ".pdf":
         raw_text = _extract_pdf(data)
     elif (
-        media_type
-        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         and path.suffix.lower() == ".docx"
     ):
         raw_text = _extract_docx(data)

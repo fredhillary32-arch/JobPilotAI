@@ -15,6 +15,7 @@ skill in a recorded role can become a bullet for that role, restated under the
 same no-new-words rule. A confirmed skill is never turned into an achievement
 or a number of years.
 """
+
 import re
 from collections import Counter
 from collections.abc import Sequence
@@ -88,47 +89,55 @@ def restate(text: str, *, past: bool) -> tuple[str, list[str], list[str]]:
 
     if "&" in value:
         value = value.replace(" & ", " and ").replace("&", " and ")
-        reasons.append("Wrote \"and\" instead of \"&\", which some parsers drop.")
+        reasons.append('Wrote "and" instead of "&", which some parsers drop.')
     if "—" in value or "–" in value:
         value = re.sub(r"\s*[—–]\s*", ", ", value)
         reasons.append("Replaced a long dash with a comma so the sentence reads and parses cleanly.")
     person = re.match(r"^(?:I|We)\s+(?:have\s+|had\s+)?(\w+)\b", value)
     if person and person.group(1).casefold() in VERB_FORMS:
-        value = value[person.start(1):]
+        value = value[person.start(1) :]
         reasons.append("Removed first-person wording; CV statements conventionally start with the action.")
-    match = re.match(r"^(?:was\s+|were\s+)?(?:responsible for|in charge of|tasked with)\s+(\w+ing)\b\s*(.*)$", value, re.I) \
-        or re.match(r"^(?:my\s+)?(?:duties|responsibilities)\s+(?:included|include|were)\s+(\w+ing)\b\s*(.*)$", value, re.I)
+    match = re.match(
+        r"^(?:was\s+|were\s+)?(?:responsible for|in charge of|tasked with)\s+(\w+ing)\b\s*(.*)$", value, re.I
+    ) or re.match(
+        r"^(?:my\s+)?(?:duties|responsibilities)\s+(?:included|include|were)\s+(\w+ing)\b\s*(.*)$", value, re.I
+    )
     if match and match.group(1).casefold() in GERUNDS:
         converted = f"{PAST_TENSE[GERUNDS[match.group(1).casefold()]]} {match.group(2)}".strip()
         # Keep a list parallel: "managed X and onboarding Y" -> "managed X and onboarded Y".
         converted = re.sub(
             r"(\b(?:and|or)\s+|,\s+)(\w+ing)\b",
-            lambda m: m.group(1) + PAST_TENSE[GERUNDS[m.group(2).casefold()]].lower()
-            if m.group(2).casefold() in GERUNDS else m.group(0),
+            lambda m: (
+                m.group(1) + PAST_TENSE[GERUNDS[m.group(2).casefold()]].lower()
+                if m.group(2).casefold() in GERUNDS
+                else m.group(0)
+            ),
             converted,
         )
         if re.search(r"(?:\b(?:and|or)\s+|,\s+)\w+ing\b", converted):
-            suggestions.append(f"\"{value[:60]}…\" lists several duties; consider rewriting it to start with what you did.")
+            suggestions.append(
+                f'"{value[:60]}…" lists several duties; consider rewriting it to start with what you did.'
+            )
         else:
             value = converted
-            reasons.append("Starts with what you did rather than \"responsible for\" or \"duties included\".")
+            reasons.append('Starts with what you did rather than "responsible for" or "duties included".')
     elif re.match(r"^(?:was\s+)?involved in\s+", value, re.I):
         value = re.sub(r"^(?:was\s+)?involved in\s+", "Contributed to ", value, flags=re.I)
-        reasons.append("\"Contributed to\" states your involvement more directly than \"involved in\".")
+        reasons.append('"Contributed to" states your involvement more directly than "involved in".')
     elif re.match(r"^worked on\s+", value, re.I):
         value = re.sub(r"^worked on\s+", "Contributed to ", value, flags=re.I)
-        reasons.append("\"Contributed to\" states your involvement more directly than \"worked on\".")
+        reasons.append('"Contributed to" states your involvement more directly than "worked on".')
     elif re.match(r"^assisted (?:with|in)\s+(?!\w+ing\b)", value, re.I):
         value = re.sub(r"^assisted (?:with|in)\s+", "Supported ", value, flags=re.I)
-        reasons.append("\"Supported\" is a clearer opening verb than \"assisted with\".")
+        reasons.append('"Supported" is a clearer opening verb than "assisted with".')
     if re.match(r"^successfully\s+", value, re.I):
         value = re.sub(r"^successfully\s+", "", value, flags=re.I)
-        reasons.append("Removed \"successfully\"; the result speaks for itself.")
+        reasons.append('Removed "successfully"; the result speaks for itself.')
 
     first = value.split()[0] if value.split() else ""
     base = THIRD_PERSON.get(first.casefold()) or (first.casefold() if first.casefold() in PAST_TENSE else None)
     if past and base and base in PAST_TENSE:
-        value = PAST_TENSE[base] + value[len(first):]
+        value = PAST_TENSE[base] + value[len(first) :]
         reasons.append("Used the past tense for a role you have finished.")
     if value and value[0].islower():
         value = value[0].upper() + value[1:]
@@ -138,18 +147,24 @@ def restate(text: str, *, past: bool) -> tuple[str, list[str], list[str]]:
         reasons.append("Ended with a full stop so every statement is punctuated the same way.")
 
     if re.match(r"^(?:was\s+)?responsible for\b", value, re.I):
-        suggestions.append(f"\"{value[:60]}…\" still starts with \"responsible for\". Describe what you did if you can.")
+        suggestions.append(f'"{value[:60]}…" still starts with "responsible for". Describe what you did if you can.')
     hits = [word for word in BUZZWORDS if phrase_in(word, value)]
     if hits:
-        suggestions.append(f"\"{hits[0]}\" is a common filler phrase; replace it with a specific example if you have one.")
+        suggestions.append(
+            f'"{hits[0]}" is a common filler phrase; replace it with a specific example if you have one.'
+        )
     if len(value.split()) > 38:
-        suggestions.append(f"\"{value[:60]}…\" is long. Consider splitting it so it is easier to scan.")
+        suggestions.append(f'"{value[:60]}…" is long. Consider splitting it so it is easier to scan.')
 
     extra = introduced_words(value, original)
     if extra:
         # Never let a restatement add content: fall back to the candidate's wording.
         fallback = original if original.endswith((".", "!", "?")) else original + "."
-        return fallback, (["Ended with a full stop so every statement is punctuated the same way."] if fallback != original else []), suggestions
+        return (
+            fallback,
+            (["Ended with a full stop so every statement is punctuated the same way."] if fallback != original else []),
+            suggestions,
+        )
     return value, reasons, suggestions
 
 
@@ -164,7 +179,13 @@ def language_quality(statements: Sequence[str]) -> dict:
         "opener_diversity": round(len(counts) / len(openers), 2) if openers else 1.0,
         "repeated_openers": sorted(word for word, count in counts.items() if count > 2),
         "first_person": sum(1 for s in statements if re.search(r"\b(I|me|my|we|our)\b", s)),
-        "weak_openers": sum(1 for s in statements if re.match(r"^(?:was\s+)?(?:responsible for|duties included|worked on|involved in|assisted with)\b", s, re.I)),
+        "weak_openers": sum(
+            1
+            for s in statements
+            if re.match(
+                r"^(?:was\s+)?(?:responsible for|duties included|worked on|involved in|assisted with)\b", s, re.I
+            )
+        ),
         "buzzwords": sorted({word for s in statements for word in BUZZWORDS if phrase_in(word, s)}),
         "average_words": round(sum(words) / len(words), 1) if words else 0.0,
         "long_statements": sum(1 for count in words if count > 38),
@@ -195,44 +216,86 @@ def _role_terms(report: dict | None) -> list[str]:
 
 
 def _relevance(text: str, terms: list[str], job_stems: set[str]) -> int:
-    return 3 * sum(1 for term in terms if phrase_in(term, text)) + len(job_stems & {stem(w) for w in content_words(text)})
+    return 3 * sum(1 for term in terms if phrase_in(term, text)) + len(
+        job_stems & {stem(w) for w in content_words(text)}
+    )
 
 
 def _role_claims(experience, evidence, past: bool, terms, job_stems, suggestions, confirmations=()) -> list[CVClaim]:
     raw: list[tuple[str, CVSourceReference]] = []
     for item in confirmations:
         if item.response == "used_in_role" and item.work_experience_id == experience.id and item.example:
-            raw.append((item.example, CVSourceReference(
-                source_type="skill_confirmation", source_id=str(item.id), source_field="example",
-                claim_text=_clean(item.example))))
+            raw.append(
+                (
+                    item.example,
+                    CVSourceReference(
+                        source_type="skill_confirmation",
+                        source_id=str(item.id),
+                        source_field="example",
+                        claim_text=_clean(item.example),
+                    ),
+                )
+            )
     if experience.description:
-        raw.append((experience.description, CVSourceReference(
-            source_type="work_experience", source_id=str(experience.id), source_field="description",
-            claim_text=_clean(experience.description))))
+        raw.append(
+            (
+                experience.description,
+                CVSourceReference(
+                    source_type="work_experience",
+                    source_id=str(experience.id),
+                    source_field="description",
+                    claim_text=_clean(experience.description),
+                ),
+            )
+        )
     for index, achievement in enumerate(experience.achievements):
-        raw.append((achievement, CVSourceReference(
-            source_type="work_experience", source_id=str(experience.id), source_field=f"achievements[{index}]",
-            claim_text=_clean(achievement))))
+        raw.append(
+            (
+                achievement,
+                CVSourceReference(
+                    source_type="work_experience",
+                    source_id=str(experience.id),
+                    source_field=f"achievements[{index}]",
+                    claim_text=_clean(achievement),
+                ),
+            )
+        )
     for item in evidence:
         label = " ".join(filter(None, (item.source_section, item.description, item.source_excerpt))).casefold()
-        linked = any(len(term) >= 3 and re.search(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", label)
-                     for term in (experience.employer, experience.job_title))
+        linked = any(
+            len(term) >= 3 and re.search(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", label)
+            for term in (experience.employer, experience.job_title)
+        )
         if item.confirmation_status != "candidate_confirmed" or item.category not in EVIDENCE_CATEGORIES or not linked:
             continue
-        raw.append((item.description, CVSourceReference(
-            source_type="candidate_evidence", source_id=str(item.id), source_field="description",
-            claim_text=_clean(item.description), source_document_id=str(item.source_document_id),
-            source_excerpt=item.source_excerpt, source_start=item.source_start, source_end=item.source_end,
-            evidence_confirmation_status="candidate_confirmed")))
+        raw.append(
+            (
+                item.description,
+                CVSourceReference(
+                    source_type="candidate_evidence",
+                    source_id=str(item.id),
+                    source_field="description",
+                    claim_text=_clean(item.description),
+                    source_document_id=str(item.source_document_id),
+                    source_excerpt=item.source_excerpt,
+                    source_start=item.source_start,
+                    source_end=item.source_end,
+                    evidence_confirmation_status="candidate_confirmed",
+                ),
+            )
+        )
     claims: dict[str, tuple[int, CVClaim]] = {}
     for text, reference in raw:
         proposed, reasons, notes = restate(text, past=past)
         suggestions.extend(notes)
         if not is_substantive_bullet(proposed) or proposed.casefold() in claims:
             continue
-        claim = CVClaim(text=proposed, source_references=[reference],
-                        origin="rewritten" if _clean(proposed) != _clean(text) else "source",
-                        change_reasons=reasons)
+        claim = CVClaim(
+            text=proposed,
+            source_references=[reference],
+            origin="rewritten" if _clean(proposed) != _clean(text) else "source",
+            change_reasons=reasons,
+        )
         claims[proposed.casefold()] = (_relevance(proposed, terms, job_stems), claim)
     ranked = [claim for _, claim in sorted(claims.values(), key=lambda pair: (-pair[0], pair[1].text.casefold()))]
     chosen = _vary_openers(ranked[:MAX_BULLETS])
@@ -260,20 +323,42 @@ def _composed_relevance_claim(report, experiences, evidence) -> CVClaim | None:
                 experience = by_id.get(ref["source_id"]) if ref["source_type"] == "work_experience" else None
                 if experience:
                     fields = [("description", experience.description or "")] + [
-                        (f"achievements[{i}]", a) for i, a in enumerate(experience.achievements)]
+                        (f"achievements[{i}]", a) for i, a in enumerate(experience.achievements)
+                    ]
                     for field, value in fields:
                         if value and phrase_in(term, value):
-                            picked.append((term, CVSourceReference(
-                                source_type="work_experience", source_id=str(experience.id),
-                                source_field=field, claim_text=_clean(value)), experience.employer))
+                            picked.append(
+                                (
+                                    term,
+                                    CVSourceReference(
+                                        source_type="work_experience",
+                                        source_id=str(experience.id),
+                                        source_field=field,
+                                        claim_text=_clean(value),
+                                    ),
+                                    experience.employer,
+                                )
+                            )
                             break
                 elif ref["source_type"] == "candidate_evidence" and ref["source_id"] in evidence_by_id:
                     record = evidence_by_id[ref["source_id"]]
-                    picked.append((term, CVSourceReference(
-                        source_type="candidate_evidence", source_id=str(record.id), source_field="description",
-                        claim_text=_clean(record.description), source_document_id=str(record.source_document_id),
-                        source_excerpt=record.source_excerpt, source_start=record.source_start,
-                        source_end=record.source_end, evidence_confirmation_status="candidate_confirmed"), None))
+                    picked.append(
+                        (
+                            term,
+                            CVSourceReference(
+                                source_type="candidate_evidence",
+                                source_id=str(record.id),
+                                source_field="description",
+                                claim_text=_clean(record.description),
+                                source_document_id=str(record.source_document_id),
+                                source_excerpt=record.source_excerpt,
+                                source_start=record.source_start,
+                                source_end=record.source_end,
+                                evidence_confirmation_status="candidate_confirmed",
+                            ),
+                            None,
+                        )
+                    )
                 if picked and picked[-1][0] == term:
                     break
     if len(picked) < 2:
@@ -289,7 +374,10 @@ def _composed_relevance_claim(report, experiences, evidence) -> CVClaim | None:
     text = f"Experience with {listed}" + (f" in roles at {' and '.join(employers)}." if employers else ".")
     references = list({(r.source_type, r.source_id, r.source_field): r for _, r, _ in picked}.values())
     return CVClaim(
-        text=text, source_references=references, key="summary:relevance", origin="composed",
+        text=text,
+        source_references=references,
+        key="summary:relevance",
+        origin="composed",
         change_reasons=["Added a sentence naming the job's requirements that your own work records demonstrate."],
     )
 
@@ -300,20 +388,30 @@ def _contact(profile: CandidateProfile) -> tuple[str, list[CVSourceReference]]:
         value = getattr(profile, field)
         if value and _clean(value):
             parts.append(_clean(value))
-            refs.append(CVSourceReference(source_type="profile_field", source_id=str(profile.id),
-                                          source_field=field, claim_text=_clean(value)))
+            refs.append(
+                CVSourceReference(
+                    source_type="profile_field", source_id=str(profile.id), source_field=field, claim_text=_clean(value)
+                )
+            )
     return " | ".join(parts), refs
 
 
 class ReviewedCvWriter:
     """CVContentProvider that writes a tailored, reviewable draft."""
 
-    def __init__(self, *, report: dict | None, certifications: Sequence[CandidateCertification] = (),
-                 source_document_id: str | None = None,
-                 confirmations: Sequence[CandidateSkillConfirmation] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        report: dict | None,
+        certifications: Sequence[CandidateCertification] = (),
+        source_document_id: str | None = None,
+        confirmations: Sequence[CandidateSkillConfirmation] = (),
+    ) -> None:
         self.report = report
         self.certifications = list(certifications)
-        self.confirmations = [item for item in confirmations if item.status == "active" and item.response in CLAIMABLE_RESPONSES]
+        self.confirmations = [
+            item for item in confirmations if item.status == "active" and item.response in CLAIMABLE_RESPONSES
+        ]
         self.source_document_id = source_document_id
         self.suggestions: list[str] = []
 
@@ -328,12 +426,23 @@ class ReviewedCvWriter:
     ) -> CVStructuredContent:
         terms = _role_terms(self.report)
         job_stems = {stem(w) for w in content_words(f"{job.job_title} {job.description}")}
-        header = [CVSourceReference(source_type="profile_field", source_id=str(profile.id),
-                                    source_field="name", claim_text=_clean(profile.name))]
+        header = [
+            CVSourceReference(
+                source_type="profile_field",
+                source_id=str(profile.id),
+                source_field="name",
+                claim_text=_clean(profile.name),
+            )
+        ]
         if profile.professional_headline:
-            header.append(CVSourceReference(source_type="profile_field", source_id=str(profile.id),
-                                            source_field="professional_headline",
-                                            claim_text=_clean(profile.professional_headline)))
+            header.append(
+                CVSourceReference(
+                    source_type="profile_field",
+                    source_id=str(profile.id),
+                    source_field="professional_headline",
+                    claim_text=_clean(profile.professional_headline),
+                )
+            )
         contact, contact_refs = _contact(profile)
         header.extend(contact_refs)
 
@@ -345,12 +454,25 @@ class ReviewedCvWriter:
                 proposed, reasons = summary, []
             self.suggestions.extend(notes)
             if re.search(r"\b(I|my)\b", summary):
-                self.suggestions.append("Your summary uses \"I\" or \"my\". CV summaries usually leave these out; edit it if you prefer.")
-            summary_claims.append(CVClaim(
-                text=proposed, key="summary:0", origin="rewritten" if proposed != summary else "source",
-                change_reasons=reasons,
-                source_references=[CVSourceReference(source_type="profile_field", source_id=str(profile.id),
-                                                     source_field="summary", claim_text=summary)]))
+                self.suggestions.append(
+                    'Your summary uses "I" or "my". CV summaries usually leave these out; edit it if you prefer.'
+                )
+            summary_claims.append(
+                CVClaim(
+                    text=proposed,
+                    key="summary:0",
+                    origin="rewritten" if proposed != summary else "source",
+                    change_reasons=reasons,
+                    source_references=[
+                        CVSourceReference(
+                            source_type="profile_field",
+                            source_id=str(profile.id),
+                            source_field="summary",
+                            claim_text=summary,
+                        )
+                    ],
+                )
+            )
             composed = _composed_relevance_claim(self.report, experiences, evidence)
             if composed:
                 summary_claims.append(composed)
@@ -364,8 +486,15 @@ class ReviewedCvWriter:
         core = [s for s in ordered if s not in tools]
 
         def skill_claim(skill: CandidateSkill) -> CVClaim:
-            return CVClaim(text=_clean(skill.name), key=f"skill:{skill.id}", source_references=[CVSourceReference(
-                source_type="skill", source_id=str(skill.id), source_field="name", claim_text=_clean(skill.name))])
+            return CVClaim(
+                text=_clean(skill.name),
+                key=f"skill:{skill.id}",
+                source_references=[
+                    CVSourceReference(
+                        source_type="skill", source_id=str(skill.id), source_field="name", claim_text=_clean(skill.name)
+                    )
+                ],
+            )
 
         # Confirmed skills relevant to this job only: no keyword stuffing, no traits as skills.
         listed = {_clean(s.name).casefold() for s in skills}
@@ -377,23 +506,64 @@ class ReviewedCvWriter:
             if not relevant or item.category == "work_style" or name.casefold() in listed or len(name.split()) > 6:
                 continue
             listed.add(name.casefold())
-            claim = CVClaim(text=name, key=f"confirmed-skill:{item.id}", source_references=[CVSourceReference(
-                source_type="skill_confirmation", source_id=str(item.id), source_field="skill_name", claim_text=name)])
+            claim = CVClaim(
+                text=name,
+                key=f"confirmed-skill:{item.id}",
+                source_references=[
+                    CVSourceReference(
+                        source_type="skill_confirmation",
+                        source_id=str(item.id),
+                        source_field="skill_name",
+                        claim_text=name,
+                    )
+                ],
+            )
             (confirmed_tools if item.category == "tool" or named_terms(name) else confirmed_core).append(claim)
 
         roles: list[CVRole] = []
-        for experience in sorted(experiences, key=lambda e: (not e.current_role, -(e.end_date or e.start_date).toordinal(), -e.start_date.toordinal())):
-            bullets = _role_claims(experience, evidence, not experience.current_role, terms, job_stems, self.suggestions,
-                                   self.confirmations)
+        for experience in sorted(
+            experiences,
+            key=lambda e: (not e.current_role, -(e.end_date or e.start_date).toordinal(), -e.start_date.toordinal()),
+        ):
+            bullets = _role_claims(
+                experience,
+                evidence,
+                not experience.current_role,
+                terms,
+                job_stems,
+                self.suggestions,
+                self.confirmations,
+            )
             dates = _date_range(experience)
-            roles.append(CVRole(
-                work_experience_id=experience.id, job_title=_clean(experience.job_title),
-                employer=_clean(experience.employer), dates=dates, bullets=bullets,
-                source_references=[
-                    CVSourceReference(source_type="work_experience", source_id=str(experience.id), source_field="job_title", claim_text=_clean(experience.job_title)),
-                    CVSourceReference(source_type="work_experience", source_id=str(experience.id), source_field="employer", claim_text=_clean(experience.employer)),
-                    CVSourceReference(source_type="work_experience", source_id=str(experience.id), source_field="dates", claim_text=dates),
-                ]))
+            roles.append(
+                CVRole(
+                    work_experience_id=experience.id,
+                    job_title=_clean(experience.job_title),
+                    employer=_clean(experience.employer),
+                    dates=dates,
+                    bullets=bullets,
+                    source_references=[
+                        CVSourceReference(
+                            source_type="work_experience",
+                            source_id=str(experience.id),
+                            source_field="job_title",
+                            claim_text=_clean(experience.job_title),
+                        ),
+                        CVSourceReference(
+                            source_type="work_experience",
+                            source_id=str(experience.id),
+                            source_field="employer",
+                            claim_text=_clean(experience.employer),
+                        ),
+                        CVSourceReference(
+                            source_type="work_experience",
+                            source_id=str(experience.id),
+                            source_field="dates",
+                            claim_text=dates,
+                        ),
+                    ],
+                )
+            )
 
         sections = [
             CVSection(heading="Professional Summary", claims=summary_claims),
@@ -403,15 +573,38 @@ class ReviewedCvWriter:
             CVSection(heading="Education", claims=[_education_claim(item) for item in education]),
         ]
         if self.certifications:
-            sections.append(CVSection(heading="Certifications", claims=[
-                CVClaim(text=f"{_clean(c.name)}, {_clean(c.issuer)} ({c.issue_date.year})", key=f"certification:{c.id}",
-                        source_references=[
-                            CVSourceReference(source_type="certification", source_id=str(c.id), source_field="name", claim_text=_clean(c.name)),
-                            CVSourceReference(source_type="certification", source_id=str(c.id), source_field="issuer", claim_text=_clean(c.issuer)),
-                            CVSourceReference(source_type="certification", source_id=str(c.id), source_field="issue_date", claim_text=c.issue_date.isoformat()),
-                        ])
-                for c in sorted(self.certifications, key=lambda c: c.issue_date, reverse=True)
-            ]))
+            sections.append(
+                CVSection(
+                    heading="Certifications",
+                    claims=[
+                        CVClaim(
+                            text=f"{_clean(c.name)}, {_clean(c.issuer)} ({c.issue_date.year})",
+                            key=f"certification:{c.id}",
+                            source_references=[
+                                CVSourceReference(
+                                    source_type="certification",
+                                    source_id=str(c.id),
+                                    source_field="name",
+                                    claim_text=_clean(c.name),
+                                ),
+                                CVSourceReference(
+                                    source_type="certification",
+                                    source_id=str(c.id),
+                                    source_field="issuer",
+                                    claim_text=_clean(c.issuer),
+                                ),
+                                CVSourceReference(
+                                    source_type="certification",
+                                    source_id=str(c.id),
+                                    source_field="issue_date",
+                                    claim_text=c.issue_date.isoformat(),
+                                ),
+                            ],
+                        )
+                        for c in sorted(self.certifications, key=lambda c: c.issue_date, reverse=True)
+                    ],
+                )
+            )
         return CVStructuredContent(
             candidate_name=_clean(profile.name),
             professional_heading=_clean(profile.professional_headline or ""),
@@ -449,24 +642,32 @@ def change_log(content: CVStructuredContent) -> list[dict]:
 
         # Capitalisation or a closing full stop alone is not a significant change.
         minor = original is not None and claim.origin == "rewritten" and bare(original) == bare(claim.text)
-        entries.append({
-            "significance": "none" if claim.origin == "source" else "minor" if minor else "wording",
-            "key": claim.key,
-            "section": heading,
-            "role": f"{role.job_title} at {role.employer}" if role else None,
-            "original": original,
-            "proposed": claim.text,
-            "changed": claim.origin != "source",
-            "origin": claim.origin,
-            "reasons": claim.change_reasons,
-            "evidence": [
-                {"source_type": ref.source_type, "source_field": ref.source_field, "text": ref.claim_text,
-                 "source_excerpt": ref.source_excerpt, "confirmed": ref.evidence_confirmation_status == "candidate_confirmed" or ref.source_type != "candidate_evidence"}
-                for ref in claim.source_references
-            ],
-            "needs_confirmation": claim.needs_confirmation,
-            "confirmation_note": claim.confirmation_note,
-        })
+        entries.append(
+            {
+                "significance": "none" if claim.origin == "source" else "minor" if minor else "wording",
+                "key": claim.key,
+                "section": heading,
+                "role": f"{role.job_title} at {role.employer}" if role else None,
+                "original": original,
+                "proposed": claim.text,
+                "changed": claim.origin != "source",
+                "origin": claim.origin,
+                "reasons": claim.change_reasons,
+                "evidence": [
+                    {
+                        "source_type": ref.source_type,
+                        "source_field": ref.source_field,
+                        "text": ref.claim_text,
+                        "source_excerpt": ref.source_excerpt,
+                        "confirmed": ref.evidence_confirmation_status == "candidate_confirmed"
+                        or ref.source_type != "candidate_evidence",
+                    }
+                    for ref in claim.source_references
+                ],
+                "needs_confirmation": claim.needs_confirmation,
+                "confirmation_note": claim.confirmation_note,
+            }
+        )
     return entries
 
 
@@ -496,13 +697,21 @@ def apply_edits(content: CVStructuredContent, edits: dict[str, str], *, parent_d
         claim.change_reasons = ["Edited by you."]
         claim.needs_confirmation = bool(extra)
         claim.confirmation_note = (
-            "Contains wording not found in your records: " + ", ".join(extra[:8])
-            + ". Confirm it is accurate before exporting." if extra else None
+            "Contains wording not found in your records: "
+            + ", ".join(extra[:8])
+            + ". Confirm it is accurate before exporting."
+            if extra
+            else None
         )
-    revised.review = (revised.review or CVReview(writer_version=WRITER_VERSION, job_description_id="")).model_copy(update={
-        "parent_draft_id": parent_draft_id, "approval_status": "pending_review",
-        "approved_at": None, "attested_unconfirmed_statements": False, "acknowledged_incomplete": False,
-    })
+    revised.review = (revised.review or CVReview(writer_version=WRITER_VERSION, job_description_id="")).model_copy(
+        update={
+            "parent_draft_id": parent_draft_id,
+            "approval_status": "pending_review",
+            "approved_at": None,
+            "attested_unconfirmed_statements": False,
+            "acknowledged_incomplete": False,
+        }
+    )
     return revised
 
 
@@ -516,11 +725,14 @@ def approve(content: CVStructuredContent, *, attest: bool, acknowledge_incomplet
             "Confirm they are accurate to approve this draft."
         )
     approved = content.model_copy(deep=True)
-    approved.review = approved.review.model_copy(update={
-        "approval_status": "approved", "approved_at": datetime.now(UTC),
-        "attested_unconfirmed_statements": bool(pending),
-        "acknowledged_incomplete": acknowledge_incomplete,
-    })
+    approved.review = approved.review.model_copy(
+        update={
+            "approval_status": "approved",
+            "approved_at": datetime.now(UTC),
+            "attested_unconfirmed_statements": bool(pending),
+            "acknowledged_incomplete": acknowledge_incomplete,
+        }
+    )
     return approved
 
 

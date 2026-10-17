@@ -14,9 +14,7 @@ from app.services.documents import LocalDocumentStorage
 from app.services.extraction import ExtractionFailure, extract_document_text
 
 PDF_TYPE = "application/pdf"
-DOCX_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def create_profile(client: TestClient, name: str = "Extraction Owner") -> str:
@@ -70,12 +68,8 @@ def upload_document(
     return response.json()
 
 
-def extract_via_api(
-    client: TestClient, profile_id: str, document_id: str
-) -> dict:
-    return client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/documents/{document_id}/extraction"
-    ).json()
+def extract_via_api(client: TestClient, profile_id: str, document_id: str) -> dict:
+    return client.post(f"/api/v1/candidate-profiles/{profile_id}/documents/{document_id}/extraction").json()
 
 
 def test_extracts_pdf_docx_and_utf8_text_without_changing_original(
@@ -94,26 +88,18 @@ def test_extracts_pdf_docx_and_utf8_text_without_changing_original(
     ]
 
     for filename, content_type, content, expected_text in fixtures:
-        source = upload_document(
-            api_client, profile_id, filename, content_type, content
-        )
+        source = upload_document(api_client, profile_id, filename, content_type, content)
         extracted = extract_via_api(api_client, profile_id, source["id"])
         assert extracted["status"] == "succeeded"
         assert extracted["character_count"] == len(expected_text)
         assert "storage_key" not in extracted
         assert "unverified_source_text" == extracted["trust_status"]
 
-        text = api_client.get(
-            f"/api/v1/candidate-profiles/{profile_id}/documents/"
-            f"{source['id']}/extraction/text"
-        )
+        text = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{source['id']}/extraction/text")
         assert text.status_code == 200
         assert text.json()["text"] == expected_text
 
-        original = api_client.get(
-            f"/api/v1/candidate-profiles/{profile_id}/documents/"
-            f"{source['id']}/download"
-        )
+        original = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{source['id']}/download")
         assert original.content == content
 
 
@@ -143,18 +129,18 @@ def test_no_text_malformed_encrypted_and_bad_utf8_are_reported_safely(
         ("broken.docx", DOCX_TYPE, make_malformed_docx(), "failed", "invalid_document"),
     ]
     for filename, content_type, content, expected_status, expected_error in fixtures:
-        source = upload_document(
-            api_client, profile_id, filename, content_type, content
-        )
+        source = upload_document(api_client, profile_id, filename, content_type, content)
         result = extract_via_api(api_client, profile_id, source["id"])
         assert result["status"] == expected_status
         assert result["error_category"] == expected_error
         assert "Traceback" not in str(result)
         assert "storage_key" not in str(result)
-        assert api_client.get(
-            f"/api/v1/candidate-profiles/{profile_id}/documents/"
-            f"{source['id']}/extraction/text"
-        ).json()["text"] is None
+        assert (
+            api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{source['id']}/extraction/text").json()[
+                "text"
+            ]
+            is None
+        )
 
 
 def test_missing_source_path_and_size_limits_are_safe(
@@ -165,9 +151,7 @@ def test_missing_source_path_and_size_limits_are_safe(
     from app.services import extraction
 
     profile_id = create_profile(api_client)
-    source = upload_document(
-        api_client, profile_id, "source.txt", "text/plain", b"safe source"
-    )
+    source = upload_document(api_client, profile_id, "source.txt", "text/plain", b"safe source")
     storage_root = tmp_path / "private-documents"
     stored = next(storage_root.iterdir())
     stored.unlink()
@@ -233,9 +217,7 @@ def test_retry_updates_existing_extraction_row_and_detects_changed_source(
     tmp_path: Path,
 ) -> None:
     profile_id = create_profile(api_client)
-    source = upload_document(
-        api_client, profile_id, "source.txt", "text/plain", b"Original evidence."
-    )
+    source = upload_document(api_client, profile_id, "source.txt", "text/plain", b"Original evidence.")
     first = extract_via_api(api_client, profile_id, source["id"])
     assert first["status"] == "succeeded"
 
@@ -247,10 +229,7 @@ def test_retry_updates_existing_extraction_row_and_detects_changed_source(
     assert second["id"] == first["id"]
     assert second["status"] == "failed"
     assert second["error_category"] == "invalid_document"
-    metadata = api_client.get(
-        f"/api/v1/candidate-profiles/{profile_id}/documents/"
-        f"{source['id']}/extraction"
-    )
+    metadata = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/documents/{source['id']}/extraction")
     assert metadata.json()["id"] == first["id"]
 
 
@@ -260,7 +239,10 @@ def test_evidence_requires_owned_document_and_matching_extracted_source(
     owner_id = create_profile(api_client, "Evidence Owner")
     other_id = create_profile(api_client, "Other Candidate")
     source = upload_document(
-        api_client, owner_id, "source.txt", "text/plain",
+        api_client,
+        owner_id,
+        "source.txt",
+        "text/plain",
         b"Built a Python service that handled 100 requests per second.",
     )
     extract_via_api(api_client, owner_id, source["id"])
@@ -271,16 +253,12 @@ def test_evidence_requires_owned_document_and_matching_extracted_source(
         "source_excerpt": "Built a Python service",
     }
 
-    cross_profile = api_client.post(
-        f"/api/v1/candidate-profiles/{other_id}/evidence", json=payload
-    )
+    cross_profile = api_client.post(f"/api/v1/candidate-profiles/{other_id}/evidence", json=payload)
     invalid_excerpt = api_client.post(
         f"/api/v1/candidate-profiles/{owner_id}/evidence",
         json={**payload, "source_excerpt": "Not present in the source"},
     )
-    created = api_client.post(
-        f"/api/v1/candidate-profiles/{owner_id}/evidence", json=payload
-    )
+    created = api_client.post(f"/api/v1/candidate-profiles/{owner_id}/evidence", json=payload)
 
     assert cross_profile.status_code == 404
     assert invalid_excerpt.status_code == 422
@@ -291,21 +269,11 @@ def test_evidence_requires_owned_document_and_matching_extracted_source(
     assert record["source_start"] == 0
     assert record["source_end"] == len(record["source_excerpt"])
 
-    evidence_path = (
-        f"/api/v1/candidate-profiles/{owner_id}/evidence/{record['id']}"
-    )
-    null_status = api_client.patch(
-        evidence_path, json={"confirmation_status": None}
-    )
-    confirmed = api_client.patch(
-        evidence_path, json={"confirmation_status": "candidate_confirmed"}
-    )
-    rejected = api_client.patch(
-        evidence_path, json={"confirmation_status": "rejected"}
-    )
-    wrong_owner = api_client.get(
-        f"/api/v1/candidate-profiles/{other_id}/evidence/{record['id']}"
-    )
+    evidence_path = f"/api/v1/candidate-profiles/{owner_id}/evidence/{record['id']}"
+    null_status = api_client.patch(evidence_path, json={"confirmation_status": None})
+    confirmed = api_client.patch(evidence_path, json={"confirmation_status": "candidate_confirmed"})
+    rejected = api_client.patch(evidence_path, json={"confirmation_status": "rejected"})
+    wrong_owner = api_client.get(f"/api/v1/candidate-profiles/{other_id}/evidence/{record['id']}")
     removed = api_client.delete(evidence_path)
 
     assert confirmed.json()["confirmation_status"] == "candidate_confirmed"
@@ -326,14 +294,10 @@ def test_evidence_rejects_unknown_source_and_requires_extraction(
         "description": "Uses Python",
         "source_excerpt": "Python",
     }
-    unknown = api_client.post(
-        f"/api/v1/candidate-profiles/{profile_id}/evidence", json=payload
-    )
+    unknown = api_client.post(f"/api/v1/candidate-profiles/{profile_id}/evidence", json=payload)
     assert unknown.status_code == 404
 
-    source = upload_document(
-        api_client, profile_id, "source.txt", "text/plain", b"Python"
-    )
+    source = upload_document(api_client, profile_id, "source.txt", "text/plain", b"Python")
     without_extraction = api_client.post(
         f"/api/v1/candidate-profiles/{profile_id}/evidence",
         json={**payload, "source_document_id": source["id"]},

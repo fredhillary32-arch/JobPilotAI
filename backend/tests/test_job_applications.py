@@ -74,7 +74,9 @@ def test_tracking_a_saved_job_records_the_first_status_event(api_client: TestCli
     profile_id = _profile(api_client)
     job_id = _job(api_client, profile_id)
 
-    response = _track(api_client, profile_id, job_id, deadline_on=str(TODAY + timedelta(days=5)), notes="Referral from a friend.")
+    response = _track(
+        api_client, profile_id, job_id, deadline_on=str(TODAY + timedelta(days=5)), notes="Referral from a friend."
+    )
 
     assert response.status_code == 201, response.text
     body = response.json()
@@ -93,7 +95,9 @@ def test_full_lifecycle_through_offer_keeps_ordered_history(api_client: TestClie
 
     for step in ["eligibility_review", "preparing", "ready_for_review"]:
         assert _move(api_client, profile_id, application_id, step).status_code == 200
-    applied = _move(api_client, profile_id, application_id, "applied", applied_on=str(TODAY), note="Submitted on the employer site.")
+    applied = _move(
+        api_client, profile_id, application_id, "applied", applied_on=str(TODAY), note="Submitted on the employer site."
+    )
     assert applied.status_code == 200, applied.text
     assert applied.json()["applied_on"] == str(TODAY)
     for step in ["interviewing", "offer", "closed"]:
@@ -103,8 +107,14 @@ def test_full_lifecycle_through_offer_keeps_ordered_history(api_client: TestClie
     assert final["status"] == "closed"
     assert final["allowed_next_statuses"] == []
     assert [event["to_status"] for event in final["events"]] == [
-        "saved", "eligibility_review", "preparing", "ready_for_review",
-        "applied", "interviewing", "offer", "closed",
+        "saved",
+        "eligibility_review",
+        "preparing",
+        "ready_for_review",
+        "applied",
+        "interviewing",
+        "offer",
+        "closed",
     ]
     assert final["events"][4]["note"] == "Submitted on the employer site."
 
@@ -138,7 +148,9 @@ def test_disallowed_transitions_are_refused_without_changing_state(
 
 def test_marking_applied_requires_a_recorded_non_future_date(api_client: TestClient) -> None:
     profile_id = _profile(api_client)
-    application_id = _track(api_client, profile_id, _job(api_client, profile_id), status="ready_for_review").json()["id"]
+    application_id = _track(api_client, profile_id, _job(api_client, profile_id), status="ready_for_review").json()[
+        "id"
+    ]
 
     missing = _move(api_client, profile_id, application_id, "applied")
     future = _move(api_client, profile_id, application_id, "applied", applied_on=str(TODAY + timedelta(days=3)))
@@ -243,12 +255,15 @@ def test_details_can_be_updated_and_cleared(api_client: TestClient, database) ->
     draft_id = _draft(factory, profile_id, job_id, generated=True)
     path = f"{API}/{profile_id}/applications/{application_id}"
 
-    updated = api_client.patch(path, json={
-        "contact_name": "Recruiter Name",
-        "contact_email": "recruiter@example.com",
-        "follow_up_on": str(TODAY + timedelta(days=7)),
-        "cv_draft_id": str(draft_id),
-    })
+    updated = api_client.patch(
+        path,
+        json={
+            "contact_name": "Recruiter Name",
+            "contact_email": "recruiter@example.com",
+            "follow_up_on": str(TODAY + timedelta(days=7)),
+            "cv_draft_id": str(draft_id),
+        },
+    )
     assert updated.status_code == 200, updated.text
     assert updated.json()["notes"] == "First note."  # untouched fields are kept
 
@@ -264,7 +279,9 @@ def test_details_can_be_updated_and_cleared(api_client: TestClient, database) ->
 def test_status_filter_returns_matching_applications(api_client: TestClient) -> None:
     profile_id = _profile(api_client)
     saved_id = _track(api_client, profile_id, _job(api_client, profile_id, "Role A")).json()["id"]
-    preparing_id = _track(api_client, profile_id, _job(api_client, profile_id, "Role B"), status="preparing").json()["id"]
+    preparing_id = _track(api_client, profile_id, _job(api_client, profile_id, "Role B"), status="preparing").json()[
+        "id"
+    ]
 
     saved = api_client.get(f"{API}/{profile_id}/applications?status=saved").json()
     preparing = api_client.get(f"{API}/{profile_id}/applications?status=preparing").json()

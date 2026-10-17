@@ -162,12 +162,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     clearTimeout(timer);
   }
   if (!response.ok) {
-    let data: unknown = null;
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
-    }
+    const data: unknown = await response.json().catch(() => null);
     if (
       response.status === 403 &&
       mutating &&
@@ -538,12 +533,7 @@ async function download(path: string): Promise<Blob> {
     throw new ApiError(0, "The download could not reach the local API.", null);
   }
   if (!response.ok) {
-    let data: unknown = null;
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
-    }
+    const data: unknown = await response.json().catch(() => null);
     const error = new ApiError(response.status, detailMessage(data), data);
     if (response.status === 401) unauthorizedHandler?.();
     throw error;

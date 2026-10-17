@@ -21,14 +21,49 @@ from app.services.cv_validation import is_substantive_bullet
 
 WORD_PATTERN = re.compile(r"[A-Za-z0-9+#]+")
 STOP_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-    "in", "is", "it", "of", "on", "or", "the", "to", "with",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
 }
 TOOLS_AND_PLATFORMS = {
-    "aws", "azure", "docker", "figma", "git", "github", "google cloud",
-    "kubernetes", "linux", "microsoft excel", "mongodb", "mysql", "postgresql",
-    "power bi", "python", "react", "redis", "salesforce", "sql", "tableau",
-    "terraform", "typescript",
+    "aws",
+    "azure",
+    "docker",
+    "figma",
+    "git",
+    "github",
+    "google cloud",
+    "kubernetes",
+    "linux",
+    "microsoft excel",
+    "mongodb",
+    "mysql",
+    "postgresql",
+    "power bi",
+    "python",
+    "react",
+    "redis",
+    "salesforce",
+    "sql",
+    "tableau",
+    "terraform",
+    "typescript",
 }
 REQUIRED_SKILLS_PATTERN = re.compile(
     r"\b(?:required\s+skills?|requirements|must[- ]have(?:\s+skills?)?)\s*:?\s*(.*)",
@@ -54,11 +89,7 @@ def _clean(value: str) -> str:
 
 
 def _tokens(value: str) -> set[str]:
-    return {
-        token.casefold()
-        for token in WORD_PATTERN.findall(value)
-        if token.casefold() not in STOP_WORDS
-    }
+    return {token.casefold() for token in WORD_PATTERN.findall(value) if token.casefold() not in STOP_WORDS}
 
 
 def _score(value: str, job_tokens: set[str]) -> int:
@@ -75,10 +106,7 @@ def extract_required_skills(description: str) -> list[str]:
             collecting_bullets = True
             remainder = match.group(1).split(".", 1)[0].strip()
             if remainder:
-                required.extend(
-                    item.strip(" -*\t")
-                    for item in re.split(r"[,;|]|\s+\band\b\s+", remainder, flags=re.I)
-                )
+                required.extend(item.strip(" -*\t") for item in re.split(r"[,;|]|\s+\band\b\s+", remainder, flags=re.I))
             continue
         if collecting_bullets:
             stripped = line.strip()
@@ -188,7 +216,8 @@ def _experience_claims(
     for item in evidence:
         if (
             item.confirmation_status != "candidate_confirmed"
-            or item.category not in {
+            or item.category
+            not in {
                 "achievement",
                 "employment_responsibility",
                 "metric",
@@ -229,8 +258,8 @@ def _experience_claims(
 
 def _date_range(experience: CandidateWorkExperience) -> str:
     start = experience.start_date.strftime("%b %Y")
-    end = "Present" if experience.current_role else (
-        experience.end_date.strftime("%b %Y") if experience.end_date else ""
+    end = (
+        "Present" if experience.current_role else (experience.end_date.strftime("%b %Y") if experience.end_date else "")
     )
     return f"{start} to {end}" if end else start
 
@@ -282,9 +311,7 @@ class DeterministicCVContentProvider:
         evidence: Sequence[CandidateEvidence],
     ) -> CVStructuredContent:
         job_tokens = _tokens(f"{job.job_title}\n{job.description}")
-        header_references = [
-            _profile_reference(profile, "name", _clean(profile.name))
-        ]
+        header_references = [_profile_reference(profile, "name", _clean(profile.name))]
         if profile.professional_headline:
             header_references.append(
                 _profile_reference(
@@ -301,14 +328,8 @@ class DeterministicCVContentProvider:
                 skill.name.casefold(),
             ),
         )
-        tool_skills = [
-            skill
-            for skill in ordered_skills
-            if skill.name.casefold().strip() in TOOLS_AND_PLATFORMS
-        ]
-        core_skills = [
-            skill for skill in ordered_skills if skill not in tool_skills
-        ]
+        tool_skills = [skill for skill in ordered_skills if skill.name.casefold().strip() in TOOLS_AND_PLATFORMS]
+        core_skills = [skill for skill in ordered_skills if skill not in tool_skills]
 
         ranked_experiences = sorted(
             experiences,
@@ -366,9 +387,7 @@ class DeterministicCVContentProvider:
             summary_claims.append(
                 CVClaim(
                     text=summary,
-                    source_references=[
-                        _profile_reference(profile, "summary", summary)
-                    ],
+                    source_references=[_profile_reference(profile, "summary", summary)],
                 )
             )
 

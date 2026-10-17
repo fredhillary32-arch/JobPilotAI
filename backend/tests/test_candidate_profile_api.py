@@ -143,12 +143,13 @@ def test_profile_and_associated_lists_return_not_found_for_missing_profile(
     profile_id = uuid4()
 
     assert api_client.get(f"/api/v1/candidate-profiles/{profile_id}").status_code == 404
-    assert api_client.patch(
-        f"/api/v1/candidate-profiles/{profile_id}",
-        json={"name": "Updated"},
-    ).status_code == 404
+    assert (
+        api_client.patch(
+            f"/api/v1/candidate-profiles/{profile_id}",
+            json={"name": "Updated"},
+        ).status_code
+        == 404
+    )
     for section in ("experiences", "education", "skills", "certifications"):
-        response = api_client.get(
-            f"/api/v1/candidate-profiles/{profile_id}/{section}"
-        )
+        response = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/{section}")
         assert response.status_code == 404

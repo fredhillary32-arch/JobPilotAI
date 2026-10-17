@@ -169,7 +169,9 @@ def create_cv_draft(
     settings = payload or CvDraftCreate()
     if settings.writer == "reviewed":
         try:
-            draft = write_reviewed_draft(session, profile_id, job, storage, source_document_id=settings.source_document_id)
+            draft = write_reviewed_draft(
+                session, profile_id, job, storage, source_document_id=settings.source_document_id
+            )
         except LookupError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     else:

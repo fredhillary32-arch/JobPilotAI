@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -15,6 +15,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.candidate_evidence import CandidateEvidence
+    from app.models.candidate_profile import CandidateProfile
+    from app.models.document_extraction import DocumentExtraction
 
 DocumentKind = Literal[
     "source_cv",
@@ -35,13 +40,11 @@ class CandidateDocument(Base):
     __tablename__ = "candidate_documents"
     __table_args__ = (
         CheckConstraint(
-            "document_kind IN ('source_cv', 'supporting_document', 'tailored_cv', "
-            "'application_document', 'final_cv')",
+            "document_kind IN ('source_cv', 'supporting_document', 'tailored_cv', 'application_document', 'final_cv')",
             name="ck_candidate_document_kind",
         ),
         CheckConstraint(
-            "provenance IN ('candidate_uploaded', 'candidate_confirmed', "
-            "'ai_generated', 'system_generated')",
+            "provenance IN ('candidate_uploaded', 'candidate_confirmed', 'ai_generated', 'system_generated')",
             name="ck_candidate_document_provenance",
         ),
         CheckConstraint("size_bytes > 0", name="ck_candidate_document_size"),
@@ -83,9 +86,7 @@ class CandidateDocument(Base):
         server_default=func.now(),
     )
 
-    candidate_profile: Mapped["CandidateProfile"] = relationship(
-        back_populates="documents"
-    )
+    candidate_profile: Mapped["CandidateProfile"] = relationship(back_populates="documents")
     source_document: Mapped["CandidateDocument | None"] = relationship(
         remote_side="CandidateDocument.id",
         back_populates="derived_documents",

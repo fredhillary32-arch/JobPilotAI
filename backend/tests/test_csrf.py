@@ -32,9 +32,7 @@ def test_pre_auth_challenge_binds_cookie_and_is_consumed_once(database) -> None:
         assert consume_pre_auth_challenge(session, token, cookie_binding, now)
     with factory() as session:
         assert not consume_pre_auth_challenge(session, token, cookie_binding, now)
-        challenge = session.scalar(
-            select(PreAuthChallenge).where(PreAuthChallenge.token_hash == hash_token(token))
-        )
+        challenge = session.scalar(select(PreAuthChallenge).where(PreAuthChallenge.token_hash == hash_token(token)))
         assert challenge is not None
         assert challenge.consumed_at is not None
 

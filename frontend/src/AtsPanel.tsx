@@ -73,27 +73,32 @@ export function AtsPanel({ profileId, jobId, sourceDocumentId, refreshKey, exper
   busy?: boolean;
   runAction?: RunAction;
 }) {
-  const [report, setReport] = useState<AtsReport | null>(null);
-  const [error, setError] = useState("");
-
-  const [loadedFor, setLoadedFor] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState<{ target: string; refreshKey: unknown; report: AtsReport } | null>(null);
+  const [failure, setFailure] = useState<{ target: string; refreshKey: unknown; message: string } | null>(null);
   const target = `${profileId}|${jobId}|${sourceDocumentId}`;
+  const report = loaded?.target === target ? loaded.report : null;
+  const error = failure?.target === target && Object.is(failure.refreshKey, refreshKey)
+    ? failure.message
+    : "";
+  const refreshing = report !== null && !Object.is(loaded?.refreshKey, refreshKey);
 
   useEffect(() => {
     let current = true;
-    // A different job starts afresh; a refresh after saving an answer keeps the report on screen.
-    if (loadedFor !== target) setReport(null);
-    else setRefreshing(true);
-    setError("");
     api.getAtsAnalysis(profileId, jobId, sourceDocumentId || undefined)
-      .then((value) => { if (current) { setReport(value); setLoadedFor(target); } })
-      .finally(() => { if (current) setRefreshing(false); })
-      .catch((caught: unknown) => { if (current) setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "The ATS analysis could not be loaded."); });
+      .then((value) => { if (current) setLoaded({ target, refreshKey, report: value }); })
+      .catch((caught: unknown) => {
+        if (current) {
+          setFailure({
+            target,
+            refreshKey,
+            message: caught instanceof ApiError || caught instanceof Error
+              ? caught.message
+              : "The ATS analysis could not be loaded.",
+          });
+        }
+      });
     return () => { current = false; };
-    // loadedFor only decides whether to clear the old report; it must not trigger a reload.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, jobId, sourceDocumentId, refreshKey]);
+  }, [profileId, jobId, sourceDocumentId, refreshKey, target]);
 
   const answer = runAction ? (item: AtsRequirement) => <RequirementAnswer busy={busy} experiences={experiences} jobId={jobId} key={`${item.key}-${item.confirmation?.id ?? "new"}-${item.confirmation?.confirmed_at ?? ""}`} profileId={profileId} requirement={item} runAction={runAction} /> : undefined;
   if (error) return <p className="feedback-error setup-error" role="alert">ATS analysis: {error}</p>;

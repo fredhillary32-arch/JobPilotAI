@@ -6,6 +6,7 @@ manually and must stay on those hosts. A "reachable" result means the page
 answered; it does not prove the vacancy is open or that the application form
 works. No form is submitted and no candidate data is sent.
 """
+
 import socket
 import time
 from collections.abc import Callable
@@ -87,7 +88,9 @@ def check_link(url: str, owns_host: Callable[[str | None], bool], *, opener=None
             return LinkResult("unreachable", current, None, "The page could not be reached.")
         final = urlsplit(current)
         if "error" in parse_qs(final.query) and final.hostname in ATS_PAGE_HOSTS["greenhouse"]:
-            return LinkResult("expired", current, status, "Greenhouse redirected to the board with an error: posting not found.")
+            return LinkResult(
+                "expired", current, status, "Greenhouse redirected to the board with an error: posting not found."
+            )
         if any(hint in final.path.lower() for hint in LOGIN_HINTS):
             return LinkResult("auth_required", current, status, "The link leads to a sign-in page.")
         return LinkResult("reachable", current, status, "The page answered on the source's own host.")
@@ -112,7 +115,15 @@ def verify_listing_links(
         rows.append(_row(listing, "listing", listing.listing_url, page_result, checked_at))
     if listing.listing_url and listing.application_url == listing.listing_url and page_result is not None:
         detail = page_result.detail + " The application form is on this page; the form itself was not tested."
-        rows.append(_row(listing, "application", listing.application_url, LinkResult(page_result.outcome, page_result.final_url, page_result.http_status, detail[:500]), checked_at))
+        rows.append(
+            _row(
+                listing,
+                "application",
+                listing.application_url,
+                LinkResult(page_result.outcome, page_result.final_url, page_result.http_status, detail[:500]),
+                checked_at,
+            )
+        )
     else:
         if page_result is not None and delay_seconds:
             sleep(delay_seconds)
@@ -124,8 +135,14 @@ def verify_listing_links(
 
 def _row(listing: JobListing, kind: str, url: str, result: LinkResult, checked_at: datetime) -> JobListingLinkCheck:
     return JobListingLinkCheck(
-        job_listing_id=listing.id, url_kind=kind, url=url, final_url=result.final_url,
-        outcome=result.outcome, http_status=result.http_status, detail=result.detail[:500], checked_at=checked_at,
+        job_listing_id=listing.id,
+        url_kind=kind,
+        url=url,
+        final_url=result.final_url,
+        outcome=result.outcome,
+        http_status=result.http_status,
+        detail=result.detail[:500],
+        checked_at=checked_at,
     )
 
 
@@ -134,17 +151,21 @@ def latest_link_checks(session: Session, listing_ids) -> dict:
     ids = list(listing_ids)
     if not ids:
         return {}
-    ranked = select(
-        JobListingLinkCheck.id,
-        func.row_number().over(
-            partition_by=(JobListingLinkCheck.job_listing_id, JobListingLinkCheck.url_kind),
-            order_by=(JobListingLinkCheck.checked_at.desc(), JobListingLinkCheck.id.desc()),
-        ).label("position"),
-    ).where(JobListingLinkCheck.job_listing_id.in_(ids)).subquery()
-    rows = session.scalars(
-        select(JobListingLinkCheck).where(
-            JobListingLinkCheck.id.in_(select(ranked.c.id).where(ranked.c.position == 1))
+    ranked = (
+        select(
+            JobListingLinkCheck.id,
+            func.row_number()
+            .over(
+                partition_by=(JobListingLinkCheck.job_listing_id, JobListingLinkCheck.url_kind),
+                order_by=(JobListingLinkCheck.checked_at.desc(), JobListingLinkCheck.id.desc()),
+            )
+            .label("position"),
         )
+        .where(JobListingLinkCheck.job_listing_id.in_(ids))
+        .subquery()
+    )
+    rows = session.scalars(
+        select(JobListingLinkCheck).where(JobListingLinkCheck.id.in_(select(ranked.c.id).where(ranked.c.position == 1)))
     )
     result: dict = {}
     for row in rows:
@@ -152,7 +173,9 @@ def latest_link_checks(session: Session, listing_ids) -> dict:
     return result
 
 
-def listings_due_for_check(session: Session, limit: int, source_kind: str | None = None, source_key: str | None = None) -> list[JobListing]:
+def listings_due_for_check(
+    session: Session, limit: int, source_kind: str | None = None, source_key: str | None = None
+) -> list[JobListing]:
     """Active listings, never-checked first, then those checked longest ago."""
     last_checked = (
         select(JobListingLinkCheck.job_listing_id, func.max(JobListingLinkCheck.checked_at).label("checked_at"))
@@ -168,6 +191,8 @@ def listings_due_for_check(session: Session, limit: int, source_kind: str | None
         query = query.where(JobListing.source_kind == source_kind, JobListing.source_key == source_key)
     return list(
         session.scalars(
-            query.order_by(last_checked.c.checked_at.asc().nulls_first(), JobListing.first_seen_at, JobListing.id).limit(limit)
+            query.order_by(
+                last_checked.c.checked_at.asc().nulls_first(), JobListing.first_seen_at, JobListing.id
+            ).limit(limit)
         )
     )

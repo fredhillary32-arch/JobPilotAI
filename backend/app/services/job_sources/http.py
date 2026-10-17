@@ -4,6 +4,7 @@ Each adapter names the only HTTPS hosts it may reach. Redirects elsewhere are
 refused, responses are size-bounded, and transient failures (timeouts, HTTP 429
 and 5xx) are retried a bounded number of times with backoff.
 """
+
 import json
 import socket
 import time

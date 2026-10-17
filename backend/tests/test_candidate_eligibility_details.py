@@ -56,14 +56,23 @@ def test_confirming_details_records_them_without_inferring_authorization(api_cli
     assert body["work_authorizations"] == []
 
 
-def test_work_authorizations_are_stored_per_country_and_replaced_on_reconfirmation(api_client: TestClient, database) -> None:
+def test_work_authorizations_are_stored_per_country_and_replaced_on_reconfirmation(
+    api_client: TestClient, database
+) -> None:
     _, factory = database
     profile_id = _profile(api_client)
-    first = _confirm(api_client, profile_id, work_authorizations=[
-        {"country_code": "KE", "status": "authorized"},
-        {"country_code": "US", "status": "not_authorized"},
-    ])
-    assert [(a["country_code"], a["status"]) for a in first.json()["work_authorizations"]] == [("KE", "authorized"), ("US", "not_authorized")]
+    first = _confirm(
+        api_client,
+        profile_id,
+        work_authorizations=[
+            {"country_code": "KE", "status": "authorized"},
+            {"country_code": "US", "status": "not_authorized"},
+        ],
+    )
+    assert [(a["country_code"], a["status"]) for a in first.json()["work_authorizations"]] == [
+        ("KE", "authorized"),
+        ("US", "not_authorized"),
+    ]
 
     second = _confirm(api_client, profile_id, work_authorizations=[{"country_code": "KE", "status": "authorized"}])
 
@@ -77,12 +86,21 @@ def test_invalid_or_contradictory_details_are_rejected(api_client: TestClient) -
 
     responses = [
         _confirm(api_client, profile_id, country_of_residence="XX"),
-        _confirm(api_client, profile_id, work_authorizations=[{"country_code": "KE", "status": "authorized"}, {"country_code": "ke", "status": "not_authorized"}]),
+        _confirm(
+            api_client,
+            profile_id,
+            work_authorizations=[
+                {"country_code": "KE", "status": "authorized"},
+                {"country_code": "ke", "status": "not_authorized"},
+            ],
+        ),
         _confirm(api_client, profile_id, relocation_willingness="not_willing", relocation_countries=["DE"]),
         _confirm(api_client, profile_id, accepted_work_arrangements=["remote", "remote"]),
         _confirm(api_client, profile_id, work_authorizations=[{"country_code": "KE", "status": "probably"}]),
         api_client.put(f"{API}/{profile_id}/eligibility-details", json={"country_of_residence": "KE"}),
-        api_client.put(f"{API}/{profile_id}/eligibility-details", json={"confirmed": False, "country_of_residence": "KE"}),
+        api_client.put(
+            f"{API}/{profile_id}/eligibility-details", json={"confirmed": False, "country_of_residence": "KE"}
+        ),
     ]
 
     assert [r.status_code for r in responses] == [422] * 7
@@ -125,6 +143,8 @@ def test_confirmation_requires_csrf(api_client: TestClient) -> None:
     assert api_client.get(f"{API}/{profile_id}/eligibility-details").json()["confirmation_status"] == "not_confirmed"
 
 
-def test_country_list_is_available_to_signed_in_users(api_client: TestClient, unauthenticated_client: TestClient) -> None:
+def test_country_list_is_available_to_signed_in_users(
+    api_client: TestClient, unauthenticated_client: TestClient
+) -> None:
     countries = api_client.get("/api/v1/countries").json()
     assert {"code": "KE", "name": "Kenya"} in countries and len(countries) == 249

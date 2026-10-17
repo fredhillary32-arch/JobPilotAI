@@ -1,4 +1,5 @@
 """ATS requirement extraction, evidence matching, scoring and CV document analysis."""
+
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -9,7 +10,6 @@ from fastapi.testclient import TestClient
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen.canvas import Canvas
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import (
     CandidateEvidence,
@@ -46,26 +46,50 @@ Benefits: health insurance and a laptop budget."""
 
 
 def create_profile(client: TestClient, **fields) -> str:
-    payload = {"name": "Amina Wanjiru", "professional_headline": "IT Support Specialist",
-               "summary": "Supports staff with laptops, accounts and service desk tickets.", **fields}
+    payload = {
+        "name": "Amina Wanjiru",
+        "professional_headline": "IT Support Specialist",
+        "summary": "Supports staff with laptops, accounts and service desk tickets.",
+        **fields,
+    }
     response = client.post(API, json=payload)
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
-def create_job(client: TestClient, profile_id: str, description: str = SUPPORT_JOB, title: str = "IT Support Specialist") -> str:
-    response = client.post(f"{API}/{profile_id}/job-descriptions",
-                           json={"job_title": title, "company": "Acme Pay", "description": description})
+def create_job(
+    client: TestClient, profile_id: str, description: str = SUPPORT_JOB, title: str = "IT Support Specialist"
+) -> str:
+    response = client.post(
+        f"{API}/{profile_id}/job-descriptions",
+        json={"job_title": title, "company": "Acme Pay", "description": description},
+    )
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
-def add_experience(factory, profile_id: str, *, achievements: list[str], start=date(2020, 1, 1),
-                   end=None, title="IT Support Specialist", employer="Savanna Telecom", description=None) -> UUID:
+def add_experience(
+    factory,
+    profile_id: str,
+    *,
+    achievements: list[str],
+    start=date(2020, 1, 1),
+    end=None,
+    title="IT Support Specialist",
+    employer="Savanna Telecom",
+    description=None,
+) -> UUID:
     with factory() as session:
         work = CandidateWorkExperience(
-            candidate_profile_id=UUID(profile_id), employer=employer, job_title=title, start_date=start,
-            end_date=end, current_role=end is None, description=description, achievements=achievements)
+            candidate_profile_id=UUID(profile_id),
+            employer=employer,
+            job_title=title,
+            start_date=start,
+            end_date=end,
+            current_role=end is None,
+            description=description,
+            achievements=achievements,
+        )
         session.add(work)
         session.commit()
         return work.id
@@ -99,11 +123,12 @@ def by_text(items: list[dict], fragment: str) -> dict:
 
 # --- Requirement extraction -------------------------------------------------
 
+
 def test_requirements_are_classified_with_exact_source_text_and_offsets() -> None:
     result = extract_requirements(SUPPORT_JOB, company="Acme Pay")
     requirements = result["requirements"]
     for item in requirements:
-        assert SUPPORT_JOB[item["source_start"]:item["source_end"]] == item["source_text"]
+        assert SUPPORT_JOB[item["source_start"] : item["source_end"]] == item["source_text"]
 
     essential = {item["source_text"] for item in requirements if item["importance"] == "essential"}
     preferred = [item for item in requirements if item["importance"] == "preferred"]
@@ -152,12 +177,16 @@ def test_curly_apostrophe_headings_are_recognised() -> None:
 
 
 def test_duty_sentences_that_mention_required_are_not_requirements() -> None:
-    text = ("Ensure safety and outlet compliance. Maintain required operating standards across stores. "
-            "Stock operations need to be governed end to end. You must hold a valid driving licence.")
+    text = (
+        "Ensure safety and outlet compliance. Maintain required operating standards across stores. "
+        "Stock operations need to be governed end to end. You must hold a valid driving licence."
+    )
     result = extract_requirements(text)
     essential = [item["source_text"] for item in result["requirements"] if item["importance"] == "essential"]
     assert essential == ["You must hold a valid driving licence."]
-    assert {item["category"] for item in result["requirements"] if item["importance"] == "not_scored"} == {"responsibility"}
+    assert {item["category"] for item in result["requirements"] if item["importance"] == "not_scored"} == {
+        "responsibility"
+    }
 
 
 def test_prose_without_requirement_wording_is_not_a_requirement() -> None:
@@ -167,16 +196,21 @@ def test_prose_without_requirement_wording_is_not_a_requirement() -> None:
 
 # --- Matching and scoring --------------------------------------------------
 
+
 def test_listed_skill_alone_is_partial_and_demonstrated_work_is_matched(api_client: TestClient, database) -> None:
     factory = database[1]
     profile_id = create_profile(api_client)
     add_skills(factory, profile_id, "Windows", "macOS")
     job_id = create_job(api_client, profile_id)
-    listed_only = by_text(analysis(api_client, profile_id, job_id)["requirements"]["essential"], "Troubleshooting Windows")
+    listed_only = by_text(
+        analysis(api_client, profile_id, job_id)["requirements"]["essential"], "Troubleshooting Windows"
+    )
     assert listed_only["status"] == "partial"
     assert "listed as a skill" in listed_only["explanation"]
 
-    add_experience(factory, profile_id, achievements=["Troubleshot Windows and macOS laptops for 300 staff across two offices."])
+    add_experience(
+        factory, profile_id, achievements=["Troubleshot Windows and macOS laptops for 300 staff across two offices."]
+    )
     shown = by_text(analysis(api_client, profile_id, job_id)["requirements"]["essential"], "Troubleshooting Windows")
     assert shown["status"] == "matched"
     assert any(ref["kind"] == "demonstrated" and ref["source_type"] == "work_experience" for ref in shown["evidence"])
@@ -188,10 +222,16 @@ def test_unreviewed_evidence_is_uncertain_and_rejected_evidence_is_ignored(api_c
     document_id = upload(api_client, profile_id, "cv.txt", b"Set up Intune for laptops.\n", "text/plain")
     job_id = create_job(api_client, profile_id)
     with factory() as session:
-        session.add(CandidateEvidence(
-            candidate_profile_id=UUID(profile_id), source_document_id=UUID(document_id), category="achievement",
-            description="Enrolled company laptops in Intune", source_excerpt="Set up Intune for laptops.",
-            confirmation_status="unreviewed"))
+        session.add(
+            CandidateEvidence(
+                candidate_profile_id=UUID(profile_id),
+                source_document_id=UUID(document_id),
+                category="achievement",
+                description="Enrolled company laptops in Intune",
+                source_excerpt="Set up Intune for laptops.",
+                confirmation_status="unreviewed",
+            )
+        )
         session.commit()
     intune = by_text(analysis(api_client, profile_id, job_id)["requirements"]["preferred"], "Intune")
     assert intune["status"] == "uncertain"
@@ -200,18 +240,27 @@ def test_unreviewed_evidence_is_uncertain_and_rejected_evidence_is_ignored(api_c
         evidence = session.scalar(select(CandidateEvidence))
         evidence.confirmation_status = "rejected"
         session.commit()
-    assert by_text(analysis(api_client, profile_id, job_id)["requirements"]["preferred"], "Intune")["status"] == "missing"
+    assert (
+        by_text(analysis(api_client, profile_id, job_id)["requirements"]["preferred"], "Intune")["status"] == "missing"
+    )
 
     with factory() as session:
         session.scalar(select(CandidateEvidence)).confirmation_status = "candidate_confirmed"
         session.commit()
-    assert by_text(analysis(api_client, profile_id, job_id)["requirements"]["preferred"], "Intune")["status"] == "matched"
+    assert (
+        by_text(analysis(api_client, profile_id, job_id)["requirements"]["preferred"], "Intune")["status"] == "matched"
+    )
 
 
 def test_uploaded_cv_text_counts_only_as_uncertain(api_client: TestClient, database) -> None:
     profile_id = create_profile(api_client)
-    document_id = upload(api_client, profile_id, "cv.txt",
-                         b"Work Experience\nTroubleshooting Windows and macOS laptops daily.\n", "text/plain")
+    document_id = upload(
+        api_client,
+        profile_id,
+        "cv.txt",
+        b"Work Experience\nTroubleshooting Windows and macOS laptops daily.\n",
+        "text/plain",
+    )
     job_id = create_job(api_client, profile_id)
     report = analysis(api_client, profile_id, job_id, document_id)
     item = by_text(report["requirements"]["essential"], "Troubleshooting Windows")
@@ -223,10 +272,15 @@ def test_uploaded_cv_text_counts_only_as_uncertain(api_client: TestClient, datab
 def test_score_is_deterministic_explained_and_weights_sum_to_100(api_client: TestClient, database) -> None:
     factory = database[1]
     profile_id = create_profile(api_client)
-    add_experience(factory, profile_id, start=date(2019, 1, 1), achievements=[
-        "Resolved hardware and software tickets in Jira Service Management for 200 staff.",
-        "Troubleshot Windows and macOS laptops and replaced failing hardware.",
-    ])
+    add_experience(
+        factory,
+        profile_id,
+        start=date(2019, 1, 1),
+        achievements=[
+            "Resolved hardware and software tickets in Jira Service Management for 200 staff.",
+            "Troubleshot Windows and macOS laptops and replaced failing hardware.",
+        ],
+    )
     job_id = create_job(api_client, profile_id)
     first, second = analysis(api_client, profile_id, job_id), analysis(api_client, profile_id, job_id)
     assert first["score"] == second["score"] and first["score"] is not None
@@ -242,7 +296,12 @@ def test_more_demonstrated_evidence_never_lowers_the_score(api_client: TestClien
     profile_id = create_profile(api_client)
     job_id = create_job(api_client, profile_id)
     before = analysis(api_client, profile_id, job_id)["score"]
-    add_experience(factory, profile_id, start=date(2018, 1, 1), achievements=["Troubleshot Windows and macOS laptops for remote staff."])
+    add_experience(
+        factory,
+        profile_id,
+        start=date(2018, 1, 1),
+        achievements=["Troubleshot Windows and macOS laptops for remote staff."],
+    )
     middle = analysis(api_client, profile_id, job_id)["score"]
     add_skills(factory, profile_id, "Intune")
     after = analysis(api_client, profile_id, job_id)["score"]
@@ -263,7 +322,12 @@ def test_empty_profile_gets_a_report_with_missing_items_and_no_errors(api_client
 def test_experience_shortfall_is_a_screening_concern(api_client: TestClient, database) -> None:
     factory = database[1]
     profile_id = create_profile(api_client)
-    add_experience(factory, profile_id, start=date.today() - timedelta(days=400), achievements=["Resolved service desk tickets for staff."])
+    add_experience(
+        factory,
+        profile_id,
+        start=date.today() - timedelta(days=400),
+        achievements=["Resolved service desk tickets for staff."],
+    )
     job_id = create_job(api_client, profile_id)
     report = analysis(api_client, profile_id, job_id)
     experience = next(item for item in report["requirements"]["essential"] if item["category"] == "experience")
@@ -276,23 +340,46 @@ def test_employer_exclusion_overrides_a_perfect_skills_match(api_client: TestCli
     profile_id = create_profile(api_client)
     restriction = "Applicants must reside in the United Kingdom."
     description = f"Requirements:\n- Python\n- SQL\n\n{restriction}"
-    add_experience(factory, profile_id, start=date(2015, 1, 1), achievements=["Built Python and SQL reporting jobs for finance teams."])
+    add_experience(
+        factory,
+        profile_id,
+        start=date(2015, 1, 1),
+        achievements=["Built Python and SQL reporting jobs for finance teams."],
+    )
     now = datetime.now(UTC)
     with factory.begin() as session:
         listing = JobListing(
-            source_kind="greenhouse", source_key="syntheticco", source_listing_id=str(uuid4()),
+            source_kind="greenhouse",
+            source_key="syntheticco",
+            source_listing_id=str(uuid4()),
             source_url="https://boards-api.greenhouse.io/v1/boards/syntheticco/jobs?content=true",
-            application_url="https://job-boards.greenhouse.io/syntheticco/jobs/1", employer_name="Synthetic Co",
-            title="Data Analyst", description_text=description, location_text="Remote",
-            content_hash="0" * 64, dedupe_key="1" * 64, source_status="active",
-            first_seen_at=now, last_seen_at=now, last_verified_at=now)
+            application_url="https://job-boards.greenhouse.io/syntheticco/jobs/1",
+            employer_name="Synthetic Co",
+            title="Data Analyst",
+            description_text=description,
+            location_text="Remote",
+            content_hash="0" * 64,
+            dedupe_key="1" * 64,
+            source_status="active",
+            first_seen_at=now,
+            last_seen_at=now,
+            last_verified_at=now,
+        )
         session.add(listing)
         session.flush()
         listing_id = listing.id
-    recorded = api_client.post(f"/api/v1/job-listings/{listing_id}/eligibility-assessments", json={
-        "outcome": "not_eligible", "explanation": "UK residents only.", "quotation": restriction,
-        "evidence_field": "description", "statement_scope": "role", "role_applicability": "direct",
-        "geographic_scope": "other_countries"})
+    recorded = api_client.post(
+        f"/api/v1/job-listings/{listing_id}/eligibility-assessments",
+        json={
+            "outcome": "not_eligible",
+            "explanation": "UK residents only.",
+            "quotation": restriction,
+            "evidence_field": "description",
+            "statement_scope": "role",
+            "role_applicability": "direct",
+            "geographic_scope": "other_countries",
+        },
+    )
     assert recorded.status_code == 201, recorded.text
     imported = api_client.post(f"{API}/{profile_id}/job-descriptions/from-listing/{listing_id}")
     assert imported.status_code == 201, imported.text
@@ -305,8 +392,10 @@ def test_employer_exclusion_overrides_a_perfect_skills_match(api_client: TestCli
 
 def test_confirmed_residence_conflict_is_a_potential_disqualifier(api_client: TestClient) -> None:
     profile_id = create_profile(api_client)
-    confirmed = api_client.put(f"{API}/{profile_id}/eligibility-details", json={
-        "confirmed": True, "country_of_residence": "KE", "relocation_willingness": "not_willing"})
+    confirmed = api_client.put(
+        f"{API}/{profile_id}/eligibility-details",
+        json={"confirmed": True, "country_of_residence": "KE", "relocation_willingness": "not_willing"},
+    )
     assert confirmed.status_code == 200, confirmed.text
     job_id = create_job(api_client, profile_id, "Requirements:\n- Python\n\nYou must reside in Germany.")
     report = analysis(api_client, profile_id, job_id)
@@ -317,14 +406,17 @@ def test_confirmed_residence_conflict_is_a_potential_disqualifier(api_client: Te
 
 # --- CV document analysis --------------------------------------------------
 
+
 def _docx_with_table_and_header() -> bytes:
     document = Document()
     document.sections[0].header.paragraphs[0].text = "amina@example.com | +254 700 000 000"
     document.add_paragraph("Amina Wanjiru")
     table = document.add_table(rows=3, cols=2)
-    rows = [("Experience", "IT Support Specialist, Savanna Telecom, 2019 to 2023"),
-            ("Skills", "Windows, macOS, Jira Service Management, Microsoft 365"),
-            ("Education", "Bachelor of Science in Computer Science, 2018")]
+    rows = [
+        ("Experience", "IT Support Specialist, Savanna Telecom, 2019 to 2023"),
+        ("Skills", "Windows, macOS, Jira Service Management, Microsoft 365"),
+        ("Education", "Bachelor of Science in Computer Science, 2018"),
+    ]
     for row, (left, right) in zip(table.rows, rows):
         row.cells[0].text, row.cells[1].text = left, right
     output = BytesIO()
@@ -346,8 +438,13 @@ def _two_column_pdf() -> bytes:
 
 def test_docx_layout_tables_and_header_contact_are_reported(api_client: TestClient) -> None:
     profile_id = create_profile(api_client)
-    document_id = upload(api_client, profile_id, "cv.docx", _docx_with_table_and_header(),
-                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    document_id = upload(
+        api_client,
+        profile_id,
+        "cv.docx",
+        _docx_with_table_and_header(),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
     job_id = create_job(api_client, profile_id)
     cv = analysis(api_client, profile_id, job_id, document_id)["cv_document"]
     codes = {risk["code"]: risk["severity"] for risk in cv["formatting_risks"]}
@@ -364,12 +461,18 @@ def test_two_column_pdf_is_reported(api_client: TestClient) -> None:
     assert any(risk["code"] == "columns" and risk["severity"] == "high" for risk in risks)
 
 
-def test_plain_cv_reports_missing_headings_unconfirmed_figures_and_date_conflicts(api_client: TestClient, database) -> None:
+def test_plain_cv_reports_missing_headings_unconfirmed_figures_and_date_conflicts(
+    api_client: TestClient, database
+) -> None:
     factory = database[1]
     profile_id = create_profile(api_client)
-    add_experience(factory, profile_id, start=date(2021, 3, 1), achievements=["Resolved service desk tickets for staff."])
-    text = ("Amina Wanjiru\nSUPERPOWERS\nSavanna Telecom 2017 to 2019\n"
-            "- Cut ticket backlog by 45% in three months\n- Resolved service desk tickets for staff\n")
+    add_experience(
+        factory, profile_id, start=date(2021, 3, 1), achievements=["Resolved service desk tickets for staff."]
+    )
+    text = (
+        "Amina Wanjiru\nSUPERPOWERS\nSavanna Telecom 2017 to 2019\n"
+        "- Cut ticket backlog by 45% in three months\n- Resolved service desk tickets for staff\n"
+    )
     document_id = upload(api_client, profile_id, "cv.txt", text.encode(), "text/plain")
     job_id = create_job(api_client, profile_id)
     cv = analysis(api_client, profile_id, job_id, document_id)["cv_document"]
@@ -382,9 +485,16 @@ def test_plain_cv_reports_missing_headings_unconfirmed_figures_and_date_conflict
 def test_malformed_or_unextracted_documents_are_reported_not_crashed(api_client: TestClient) -> None:
     profile_id = create_profile(api_client)
     job_id = create_job(api_client, profile_id)
-    broken = api_client.post(f"{API}/{profile_id}/documents",
-                             files={"file": ("cv.docx", b"PK\x03\x04not really a docx",
-                                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+    broken = api_client.post(
+        f"{API}/{profile_id}/documents",
+        files={
+            "file": (
+                "cv.docx",
+                b"PK\x03\x04not really a docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
     if broken.status_code == 201:
         document_id = broken.json()["id"]
         api_client.post(f"{API}/{profile_id}/documents/{document_id}/extraction")
@@ -399,7 +509,10 @@ def test_malformed_or_unextracted_documents_are_reported_not_crashed(api_client:
 
 # --- Access control ---------------------------------------------------------
 
-def test_analysis_requires_a_session_and_ownership(api_client: TestClient, unauthenticated_client: TestClient, database) -> None:
+
+def test_analysis_requires_a_session_and_ownership(
+    api_client: TestClient, unauthenticated_client: TestClient, database
+) -> None:
     factory = database[1]
     profile_id = create_profile(api_client)
     job_id = create_job(api_client, profile_id)
@@ -413,7 +526,12 @@ def test_analysis_requires_a_session_and_ownership(api_client: TestClient, unaut
         foreign_id = foreign.id
     assert api_client.get(f"{API}/{foreign_id}/job-descriptions/{job_id}/ats-analysis").status_code == 404
     assert api_client.get(f"{API}/{profile_id}/job-descriptions/{uuid4()}/ats-analysis").status_code == 404
-    assert api_client.get(f"{API}/{profile_id}/job-descriptions/{job_id}/ats-analysis?source_document_id={uuid4()}").status_code == 404
+    assert (
+        api_client.get(
+            f"{API}/{profile_id}/job-descriptions/{job_id}/ats-analysis?source_document_id={uuid4()}"
+        ).status_code
+        == 404
+    )
 
     api_client.cookies.clear()
     assert unauthenticated_client.get(f"{API}/{profile_id}/job-descriptions/{job_id}/ats-analysis").status_code == 401
@@ -422,5 +540,7 @@ def test_analysis_requires_a_session_and_ownership(api_client: TestClient, unaut
 @pytest.mark.parametrize("description", ["", "   "])
 def test_blank_job_descriptions_are_still_refused(api_client: TestClient, description: str) -> None:
     profile_id = create_profile(api_client)
-    response = api_client.post(f"{API}/{profile_id}/job-descriptions", json={"job_title": "Role", "description": description})
+    response = api_client.post(
+        f"{API}/{profile_id}/job-descriptions", json={"job_title": "Role", "description": description}
+    )
     assert response.status_code == 422

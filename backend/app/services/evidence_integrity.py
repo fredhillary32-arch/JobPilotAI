@@ -6,6 +6,7 @@ the latest successful extraction still has that excerpt at those offsets. Stale
 evidence keeps the candidate's review decision but must not support CV claims,
 match results or exports until it is re-linked to the current text.
 """
+
 from collections.abc import Iterable, Sequence
 from uuid import UUID
 
@@ -21,9 +22,7 @@ def current_texts(session: Session, document_ids: Iterable[UUID]) -> dict[UUID, 
     texts: dict[UUID, str | None] = dict.fromkeys(ids)
     if not ids:
         return texts
-    for extraction in session.scalars(
-        select(DocumentExtraction).where(DocumentExtraction.source_document_id.in_(ids))
-    ):
+    for extraction in session.scalars(select(DocumentExtraction).where(DocumentExtraction.source_document_id.in_(ids))):
         if extraction.status == "succeeded" and extraction.extracted_text:
             texts[extraction.source_document_id] = extraction.extracted_text
     return texts

@@ -46,11 +46,7 @@ def _get_extraction_or_404(
     document_id: UUID,
     session: DatabaseSession,
 ) -> DocumentExtraction:
-    extraction = session.scalar(
-        select(DocumentExtraction).where(
-            DocumentExtraction.source_document_id == document_id
-        )
-    )
+    extraction = session.scalar(select(DocumentExtraction).where(DocumentExtraction.source_document_id == document_id))
     if extraction is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -91,11 +87,7 @@ def run_document_extraction(
         error_category = outcome.error_category
         extractor_version = outcome.extractor_version
 
-    extraction = session.scalar(
-        select(DocumentExtraction).where(
-            DocumentExtraction.source_document_id == document.id
-        )
-    )
+    extraction = session.scalar(select(DocumentExtraction).where(DocumentExtraction.source_document_id == document.id))
     if extraction is None:
         extraction = DocumentExtraction(
             source_document_id=document.id,

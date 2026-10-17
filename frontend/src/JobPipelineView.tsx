@@ -135,27 +135,38 @@ export function JobPipelineView({ profileId, busy, onPrepare, onOpenCv }: {
   const [roleGroups, setRoleGroups] = useState<RoleGroup[]>([]);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
-  const [pipeline, setPipeline] = useState<JobPipeline | null>(null);
-  const [error, setError] = useState("");
+  const [result, setResult] = useState<{ key: string; pipeline: JobPipeline | null; error: string } | null>(null);
   const [tab, setTab] = useState<PipelineQueue | null>(null);
   const [prepared, setPrepared] = useState<Record<string, PreparedApplication>>({});
   const [reload, setReload] = useState(0);
+  const requestKey = JSON.stringify([profileId, window, roleGroups, appliedSearch, reload]);
+  const currentResult = result?.key === requestKey ? result : null;
+  const pipeline = currentResult?.pipeline ?? null;
+  const error = currentResult?.error ?? "";
 
   useEffect(() => {
     let current = true;
-    setPipeline(null);
-    setError("");
     api.getJobPipeline(profileId, { postedWithinHours: window === "all" ? undefined : Number(window), roleGroups, search: appliedSearch })
       .then((value) => {
         if (!current) return;
-        setPipeline(value);
+        setResult({ key: requestKey, pipeline: value, error: "" });
         setTab((selected) => selected ?? (["auto_apply", "needs_action", "review_needed", "not_eligible"] as PipelineQueue[]).find((name) => value.counts[name] > 0) ?? "needs_action");
       })
-      .catch((caught: unknown) => { if (current) setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "The job pipeline could not be loaded."); });
+      .catch((caught: unknown) => {
+        if (current) {
+          setResult({
+            key: requestKey,
+            pipeline: null,
+            error: caught instanceof ApiError || caught instanceof Error
+              ? caught.message
+              : "The job pipeline could not be loaded.",
+          });
+        }
+      });
     return () => { current = false; };
     // roleGroups is compared by value through its joined form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, window, roleGroups.join(","), appliedSearch, reload]);
+  }, [profileId, window, roleGroups.join(","), appliedSearch, reload, requestKey]);
 
   async function prepare(listingId: string) {
     const pack = await onPrepare(listingId);

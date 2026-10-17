@@ -6,13 +6,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, text
 
-
-MIGRATION_PATH = (
-    Path(__file__).parents[1]
-    / "alembic"
-    / "versions"
-    / "d4f7a19c2b86_add_local_auth_identity_tables.py"
-)
+MIGRATION_PATH = Path(__file__).parents[1] / "alembic" / "versions" / "d4f7a19c2b86_add_local_auth_identity_tables.py"
 SPEC = spec_from_file_location("local_auth_migration", MIGRATION_PATH)
 assert SPEC is not None and SPEC.loader is not None
 MIGRATION = module_from_spec(SPEC)
@@ -35,10 +29,7 @@ def test_additive_auth_migration_preserves_unassigned_legacy_profile() -> None:
                 )
             )
             connection.execute(
-                text(
-                    "INSERT INTO candidate_profiles (id, name, contact_email) "
-                    "VALUES (:id, :name, :email)"
-                ),
+                text("INSERT INTO candidate_profiles (id, name, contact_email) VALUES (:id, :name, :email)"),
                 {
                     "id": profile_id.hex,
                     "name": "Synthetic legacy profile",
@@ -50,10 +41,7 @@ def test_additive_auth_migration_preserves_unassigned_legacy_profile() -> None:
                 MIGRATION.upgrade()
 
             preserved = connection.execute(
-                text(
-                    "SELECT id, name, contact_email, user_id "
-                    "FROM candidate_profiles WHERE id = :id"
-                ),
+                text("SELECT id, name, contact_email, user_id FROM candidate_profiles WHERE id = :id"),
                 {"id": profile_id.hex},
             ).one()
             assert preserved.name == "Synthetic legacy profile"
@@ -68,10 +56,7 @@ def test_additive_auth_migration_preserves_unassigned_legacy_profile() -> None:
                 "pre_auth_challenges",
                 "profile_ownership_adoptions",
             }.issubset(tables)
-            assert any(
-                fk["referred_table"] == "users"
-                for fk in inspector.get_foreign_keys("candidate_profiles")
-            )
+            assert any(fk["referred_table"] == "users" for fk in inspector.get_foreign_keys("candidate_profiles"))
             assert inspector.get_foreign_keys("auth_sessions")[0]["referred_table"] == "users"
             assert MIGRATION.down_revision == "7ce347caa873"
     finally:

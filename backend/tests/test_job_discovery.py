@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import json
 import socket
+from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
@@ -131,7 +131,7 @@ def test_greenhouse_requires_an_employer_name() -> None:
         GreenhouseBoardSource("syntheticco", "   ")
 
 
-@pytest.mark.parametrize("body", [b"not json", b"{\"jobs\": {}}", b"[]", b"\xff\xfe"])
+@pytest.mark.parametrize("body", [b"not json", b'{"jobs": {}}', b"[]", b"\xff\xfe"])
 def test_greenhouse_reports_malformed_responses(body: bytes) -> None:
     source = GreenhouseBoardSource("syntheticco", "Synthetic Co", fetcher=lambda url: body)
     with pytest.raises(SourceFetchError) as caught:
@@ -300,7 +300,10 @@ def test_failed_run_is_recorded_and_leaves_listings_untouched(database, category
     after = {key: (row.source_status, row.last_verified_at) for key, row in listings(factory).items()}
     assert after == before
     with factory() as session:
-        assert [r.status for r in session.scalars(select(JobDiscoveryRun).order_by(JobDiscoveryRun.started_at))] == ["succeeded", "failed"]
+        assert [r.status for r in session.scalars(select(JobDiscoveryRun).order_by(JobDiscoveryRun.started_at))] == [
+            "succeeded",
+            "failed",
+        ]
 
 
 def test_unexpected_storage_error_marks_run_failed_and_rolls_back(database, monkeypatch) -> None:
@@ -349,10 +352,18 @@ def test_database_enforces_source_identity_uniqueness(database) -> None:
     with factory() as session, pytest.raises(IntegrityError):
         session.add(
             JobListing(
-                source_kind="greenhouse", source_key="syntheticco", source_listing_id="1",
-                source_url=original.source_url, application_url=original.application_url,
-                employer_name="Synthetic Co", title="Copy", content_hash="0" * 64, dedupe_key="0" * 64,
-                first_seen_at=NOW, last_seen_at=NOW, last_verified_at=NOW,
+                source_kind="greenhouse",
+                source_key="syntheticco",
+                source_listing_id="1",
+                source_url=original.source_url,
+                application_url=original.application_url,
+                employer_name="Synthetic Co",
+                title="Copy",
+                content_hash="0" * 64,
+                dedupe_key="0" * 64,
+                first_seen_at=NOW,
+                last_seen_at=NOW,
+                last_verified_at=NOW,
             )
         )
         session.commit()

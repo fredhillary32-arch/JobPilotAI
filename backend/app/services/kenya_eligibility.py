@@ -17,6 +17,7 @@ an exact substring of the stored listing text, so decisions re-evaluate
 automatically when the source wording changes. Location and nationality are never
 used to infer work authorization.
 """
+
 import re
 from dataclasses import dataclass, field
 
@@ -26,7 +27,13 @@ from sqlalchemy.orm import Session
 from app.models import CandidateEligibilityDetails, CandidateWorkAuthorization, JobListing, ListingEligibilityAssessment
 from app.services.countries import _EXTRA_NAMES, COUNTRIES
 from app.services.eligibility import evidence_is_current
-from app.services.job_fit import NO_SPONSORSHIP, SENTENCE_SPLIT, SPONSORSHIP_OFFERED, STRICT_RESIDENCY, STRICT_WORK_AUTHORIZATION
+from app.services.job_fit import (
+    NO_SPONSORSHIP,
+    SENTENCE_SPLIT,
+    SPONSORSHIP_OFFERED,
+    STRICT_RESIDENCY,
+    STRICT_WORK_AUTHORIZATION,
+)
 from app.services.source_registry import entry_for_source
 
 # One pass over the text instead of a search per country name; same case-sensitive,
@@ -41,7 +48,7 @@ def countries_named_in(text: str) -> list[str]:
     return list(dict.fromkeys(_NAME_TO_CODE[match.group(1)] for match in _COUNTRY_PATTERN.finditer(text)))
 
 
-ELIGIBLE, INELIGIBLE, UNVERIFIED, NEEDS_INPUT ="eligible", "ineligible", "unverified", "needs_candidate_input"
+ELIGIBLE, INELIGIBLE, UNVERIFIED, NEEDS_INPUT = "eligible", "ineligible", "unverified", "needs_candidate_input"
 STATES = (ELIGIBLE, INELIGIBLE, UNVERIFIED, NEEDS_INPUT)
 KENYA = "KE"
 
@@ -72,7 +79,11 @@ ROLE_SCOPED = re.compile(
 PAY_CONTEXT = re.compile(r"\b(salary|pay range|base pay|compensation|on-target earnings|OTE|equity)\b", re.I)
 # Role-specific evidence (the employer's location field or the title) outranks
 # generic worldwide wording elsewhere in the description.
-ROLE_SPECIFIC_NEGATIVE = {"location_label_excludes_kenya", "title_names_other_country", "residency_restricted_elsewhere"}
+ROLE_SPECIFIC_NEGATIVE = {
+    "location_label_excludes_kenya",
+    "title_names_other_country",
+    "residency_restricted_elsewhere",
+}
 # An exclusion word close to the Kenya mention, not anywhere in a long sentence.
 _PLACE = r"(?:Kenya(?:n|ns)?|Nairobi|Mombasa|Kisumu|Nakuru|Eldoret)"
 KENYA_EXCLUDED = re.compile(
@@ -93,18 +104,72 @@ EXCLUSION = re.compile(
 ONSITE_TEXT = re.compile(r"\b(on-?site|in[- ]office|office[- ]based|hybrid)\b", re.I)
 # Cities seen in employer location labels, so "Lagos" or "Toronto, ON" are recognised.
 CITY_COUNTRIES = {
-    "Nairobi": "KE", "Mombasa": "KE", "Kisumu": "KE", "Lagos": "NG", "Abuja": "NG", "Ogun": "NG", "Accra": "GH",
-    "Kampala": "UG", "Kigali": "RW", "Dar es Salaam": "TZ", "Addis Ababa": "ET", "Johannesburg": "ZA",
-    "Cape Town": "ZA", "Gauteng": "ZA", "Cairo": "EG", "Casablanca": "MA", "London": "GB", "Manchester": "GB",
-    "Edinburgh": "GB", "Dublin": "IE", "Berlin": "DE", "Munich": "DE", "Paris": "FR", "Amsterdam": "NL",
-    "Madrid": "ES", "Barcelona": "ES", "Lisbon": "PT", "Warsaw": "PL", "Bucharest": "RO", "Stockholm": "SE",
-    "Toronto": "CA", "Vancouver": "CA", "Montreal": "CA", "New York": "US", "San Francisco": "US",
-    "Seattle": "US", "Austin": "US", "Boston": "US", "Chicago": "US", "Los Angeles": "US", "Denver": "US",
-    "Bangalore": "IN", "Bengaluru": "IN", "Mumbai": "IN", "Hyderabad": "IN", "Pune": "IN", "Delhi": "IN",
-    "Singapore": "SG", "Taipei": "TW", "Beijing": "CN", "Shanghai": "CN", "Tokyo": "JP", "Sydney": "AU",
-    "Melbourne": "AU", "Dubai": "AE", "Tel Aviv": "IL", "KSA": "SA", "Riyadh": "SA", "Tampa": "US", "Sao Paulo": "BR", "São Paulo": "BR", "Mexico City": "MX",
+    "Nairobi": "KE",
+    "Mombasa": "KE",
+    "Kisumu": "KE",
+    "Lagos": "NG",
+    "Abuja": "NG",
+    "Ogun": "NG",
+    "Accra": "GH",
+    "Kampala": "UG",
+    "Kigali": "RW",
+    "Dar es Salaam": "TZ",
+    "Addis Ababa": "ET",
+    "Johannesburg": "ZA",
+    "Cape Town": "ZA",
+    "Gauteng": "ZA",
+    "Cairo": "EG",
+    "Casablanca": "MA",
+    "London": "GB",
+    "Manchester": "GB",
+    "Edinburgh": "GB",
+    "Dublin": "IE",
+    "Berlin": "DE",
+    "Munich": "DE",
+    "Paris": "FR",
+    "Amsterdam": "NL",
+    "Madrid": "ES",
+    "Barcelona": "ES",
+    "Lisbon": "PT",
+    "Warsaw": "PL",
+    "Bucharest": "RO",
+    "Stockholm": "SE",
+    "Toronto": "CA",
+    "Vancouver": "CA",
+    "Montreal": "CA",
+    "New York": "US",
+    "San Francisco": "US",
+    "Seattle": "US",
+    "Austin": "US",
+    "Boston": "US",
+    "Chicago": "US",
+    "Los Angeles": "US",
+    "Denver": "US",
+    "Bangalore": "IN",
+    "Bengaluru": "IN",
+    "Mumbai": "IN",
+    "Hyderabad": "IN",
+    "Pune": "IN",
+    "Delhi": "IN",
+    "Singapore": "SG",
+    "Taipei": "TW",
+    "Beijing": "CN",
+    "Shanghai": "CN",
+    "Tokyo": "JP",
+    "Sydney": "AU",
+    "Melbourne": "AU",
+    "Dubai": "AE",
+    "Tel Aviv": "IL",
+    "KSA": "SA",
+    "Riyadh": "SA",
+    "Tampa": "US",
+    "Sao Paulo": "BR",
+    "São Paulo": "BR",
+    "Mexico City": "MX",
 }
-CITY_PATTERN = re.compile(r"\b(" + "|".join(re.escape(city) for city in sorted(CITY_COUNTRIES, key=len, reverse=True)) + r")\b")
+CITY_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(city) for city in sorted(CITY_COUNTRIES, key=len, reverse=True)) + r")\b"
+)
 US_STATE = re.compile(r",\s*(?:[A-Z]{2})\s*$")
 CA_PROVINCE = re.compile(r",\s*(?:ON|BC|QC|AB|MB|NS)\s*$")
 
@@ -146,14 +211,22 @@ def candidate_facts(session: Session, profile_id) -> CandidateFacts:
     details = session.get(CandidateEligibilityDetails, profile_id)
     authorizations = {
         row.country_code: row.status
-        for row in session.scalars(select(CandidateWorkAuthorization).where(CandidateWorkAuthorization.candidate_profile_id == profile_id))
+        for row in session.scalars(
+            select(CandidateWorkAuthorization).where(CandidateWorkAuthorization.candidate_profile_id == profile_id)
+        )
     }
     return CandidateFacts(residence=details.country_of_residence if details else None, authorizations=authorizations)
 
 
 def _evidence(kind: str, rule: str, quotation: str, field_name: str, countries=()) -> dict:
-    return {"kind": kind, "rule": rule, "quotation": quotation, "field": field_name,
-            "countries": [COUNTRIES[c] for c in countries if c in COUNTRIES], "explanation": RULE_EXPLANATIONS[rule]}
+    return {
+        "kind": kind,
+        "rule": rule,
+        "quotation": quotation,
+        "field": field_name,
+        "countries": [COUNTRIES[c] for c in countries if c in COUNTRIES],
+        "explanation": RULE_EXPLANATIONS[rule],
+    }
 
 
 def _places(part: str) -> set[str]:
@@ -209,13 +282,18 @@ def _description_evidence(text: str, facts: CandidateFacts | None) -> tuple[list
     if not (has_kenya or has_worldwide or has_residency or has_authorization):
         return positive, negative, needs, conflicts
     sentences = [part.strip() for part in SENTENCE_SPLIT.split(text) if part.strip()]
-    sponsorship = has_authorization and any(SPONSORSHIP_OFFERED.search(s) and not NO_SPONSORSHIP.search(s) for s in sentences)
+    sponsorship = has_authorization and any(
+        SPONSORSHIP_OFFERED.search(s) and not NO_SPONSORSHIP.search(s) for s in sentences
+    )
     for sentence in sentences:
         residency = has_residency and STRICT_RESIDENCY.search(sentence)
         authorization = has_authorization and STRICT_WORK_AUTHORIZATION.search(sentence)
         # Country lookup is the expensive step; only sentences that can matter need it.
-        countries = (countries_named_in(sentence) + [CITY_COUNTRIES[c] for c in CITY_PATTERN.findall(sentence)]
-                     if residency or authorization else [])
+        countries = (
+            countries_named_in(sentence) + [CITY_COUNTRIES[c] for c in CITY_PATTERN.findall(sentence)]
+            if residency or authorization
+            else []
+        )
         if has_kenya and KENYA_PLACES.search(sentence) and HIRING_CONTEXT.search(sentence):
             if KENYA_EXCLUDED.search(sentence):
                 negative.append(_evidence("negative", "description_excludes_kenya", sentence, "description", [KENYA]))
@@ -224,14 +302,20 @@ def _description_evidence(text: str, facts: CandidateFacts | None) -> tuple[list
         elif has_worldwide and WORLDWIDE_TEXT.search(sentence) and ROLE_SCOPED.search(sentence):
             if EXCLUSION.search(sentence) or HEDGED.search(sentence):
                 conflicts.append(_evidence("conflict", "conflicting_evidence", sentence, "description"))
-            elif not (REGIONS_WITH_KENYA.search(sentence) or REGIONS_WITHOUT_KENYA.search(sentence) or countries_named_in(sentence)):
+            elif not (
+                REGIONS_WITH_KENYA.search(sentence)
+                or REGIONS_WITHOUT_KENYA.search(sentence)
+                or countries_named_in(sentence)
+            ):
                 # "anywhere in the AMER or EMEA regions" is a region list, not worldwide.
                 positive.append(_evidence("positive", "description_worldwide", sentence, "description"))
         if residency and not PAY_CONTEXT.search(sentence):  # "salary range ... for US residents" is about pay
             if KENYA in countries:
                 positive.append(_evidence("positive", "residency_includes_kenya", sentence, "description", [KENYA]))
             elif countries or REGIONS_WITHOUT_KENYA.search(sentence):
-                negative.append(_evidence("negative", "residency_restricted_elsewhere", sentence, "description", countries))
+                negative.append(
+                    _evidence("negative", "residency_restricted_elsewhere", sentence, "description", countries)
+                )
         if authorization and not SPONSORSHIP_OFFERED.search(sentence):
             required = countries or ([facts.residence] if facts and facts.residence else [])
             held = facts.authorizations if facts else {}
@@ -240,7 +324,9 @@ def _description_evidence(text: str, facts: CandidateFacts | None) -> tuple[list
             elif any(held.get(code) == "not_authorized" for code in required) and not sponsorship:
                 negative.append(_evidence("negative", "work_authorization_not_held", sentence, "description", required))
             elif not all(held.get(code) == "authorized" for code in required):
-                needs.append(_evidence("requirement", "work_authorization_unconfirmed", sentence, "description", required))
+                needs.append(
+                    _evidence("requirement", "work_authorization_unconfirmed", sentence, "description", required)
+                )
     return positive, negative, needs, conflicts
 
 
@@ -249,23 +335,40 @@ def _source(listing: JobListing) -> tuple[str | None, str, bool]:
     entry = entry_for_source(listing.source_kind, listing.source_key)
     category = listing.source_category or (entry.category if entry else None)
     authoritative = entry is not None and category != "aggregator"
-    source_type = f"{listing.source_kind} board" + (f" ({category.replace('_', ' ')})" if category else " (unregistered)")
+    source_type = f"{listing.source_kind} board" + (
+        f" ({category.replace('_', ' ')})" if category else " (unregistered)"
+    )
     return url, source_type, authoritative
 
 
-def _decision(state: str, rule: str, listing: JobListing, evidence: list[dict], conflicts: list[dict],
-              requirements: list[dict], assessment_id=None) -> dict:
+def _decision(
+    state: str,
+    rule: str,
+    listing: JobListing,
+    evidence: list[dict],
+    conflicts: list[dict],
+    requirements: list[dict],
+    assessment_id=None,
+) -> dict:
     url, source_type, authoritative = _source(listing)
     return {
-        "state": state, "rule": rule, "explanation": RULE_EXPLANATIONS[rule],
-        "evidence": evidence, "conflicts": conflicts, "requirements": requirements,
-        "source_url": url, "source_type": source_type, "source_authoritative": authoritative,
-        "checked_at": listing.last_verified_at, "assessment_id": assessment_id,
+        "state": state,
+        "rule": rule,
+        "explanation": RULE_EXPLANATIONS[rule],
+        "evidence": evidence,
+        "conflicts": conflicts,
+        "requirements": requirements,
+        "source_url": url,
+        "source_type": source_type,
+        "source_authoritative": authoritative,
+        "checked_at": listing.last_verified_at,
+        "assessment_id": assessment_id,
     }
 
 
-def decide(listing: JobListing, assessment: ListingEligibilityAssessment | None = None,
-           facts: CandidateFacts | None = None) -> dict:
+def decide(
+    listing: JobListing, assessment: ListingEligibilityAssessment | None = None, facts: CandidateFacts | None = None
+) -> dict:
     description, label = listing.description_text or "", listing.location_text or ""
     url, _, authoritative = _source(listing)
 
@@ -281,8 +384,11 @@ def decide(listing: JobListing, assessment: ListingEligibilityAssessment | None 
             item = _evidence("positive", "candidate_review_confirmed", assessment.quotation, assessment.evidence_field)
             return _decision(ELIGIBLE, "candidate_review_confirmed", listing, [item], [], [], assessment.id)
         if assessment.outcome == "not_eligible":
-            items = ([_evidence("negative", "candidate_review_excluded", assessment.quotation, assessment.evidence_field)]
-                     if assessment.quotation and assessment.quotation in quoted_field else [])
+            items = (
+                [_evidence("negative", "candidate_review_excluded", assessment.quotation, assessment.evidence_field)]
+                if assessment.quotation and assessment.quotation in quoted_field
+                else []
+            )
             return _decision(INELIGIBLE, "candidate_review_excluded", listing, items, [], [], assessment.id)
         return _decision(UNVERIFIED, "candidate_review_not_established", listing, [], [], [], assessment.id)
 
@@ -295,7 +401,9 @@ def decide(listing: JobListing, assessment: ListingEligibilityAssessment | None 
     if REGIONS_WITHOUT_KENYA.search(listing.title):
         title_places.add("region")
     if title_places and not KENYA_PLACES.search(listing.title):
-        negative.append(_evidence("negative", "title_names_other_country", listing.title, "title", sorted(title_places)))
+        negative.append(
+            _evidence("negative", "title_names_other_country", listing.title, "title", sorted(title_places))
+        )
     if any(e["rule"] == "location_label_names_kenya" for e in positive):
         # An onsite or hybrid role whose own location includes Kenya is attendable.
         negative = [e for e in negative if e["rule"] != "location_label_excludes_kenya"]
@@ -334,13 +442,21 @@ _CACHE: dict[tuple, dict] = {}
 _CACHE_LIMIT = 5000
 
 
-def decide_cached(listing: JobListing, assessment: ListingEligibilityAssessment | None,
-                  facts: CandidateFacts | None) -> dict:
+def decide_cached(
+    listing: JobListing, assessment: ListingEligibilityAssessment | None, facts: CandidateFacts | None
+) -> dict:
     """decide() memoised on every input it reads, so any wording change re-evaluates."""
     key = (
-        listing.id, hash(listing.description_text), listing.location_text, listing.title,
-        listing.listing_url, listing.application_url, listing.source_kind, listing.source_key,
-        listing.source_category, listing.last_verified_at,
+        listing.id,
+        hash(listing.description_text),
+        listing.location_text,
+        listing.title,
+        listing.listing_url,
+        listing.application_url,
+        listing.source_kind,
+        listing.source_key,
+        listing.source_category,
+        listing.last_verified_at,
         (assessment.id, hash(assessment.examined_description), assessment.examined_location) if assessment else None,
         (facts.residence, tuple(sorted(facts.authorizations.items()))) if facts else None,
     )

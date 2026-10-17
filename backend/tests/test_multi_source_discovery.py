@@ -4,6 +4,7 @@ locking, the background refresh endpoint and the richer listing filters.
 Every response here is a synthetic fixture shaped like the documented APIs; no
 test contacts a real source.
 """
+
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -31,18 +32,34 @@ API = "/api/v1/job-listings"
 
 def jobicy_job(number: int, **extra) -> dict:
     return {
-        "id": number, "url": f"https://jobicy.com/jobs/{number}-support", "jobTitle": f"Customer Support Agent {number}",
-        "companyName": "Synthetic Remote Co", "jobGeo": "Anywhere", "jobDescription": "<p>Help customers.</p>",
-        "pubDate": (NOW - timedelta(hours=number)).isoformat(), "salaryMin": 30000, "salaryMax": 40000,
-        "salaryCurrency": "USD", "salaryPeriod": "yearly", **extra,
+        "id": number,
+        "url": f"https://jobicy.com/jobs/{number}-support",
+        "jobTitle": f"Customer Support Agent {number}",
+        "companyName": "Synthetic Remote Co",
+        "jobGeo": "Anywhere",
+        "jobDescription": "<p>Help customers.</p>",
+        "pubDate": (NOW - timedelta(hours=number)).isoformat(),
+        "salaryMin": 30000,
+        "salaryMax": 40000,
+        "salaryCurrency": "USD",
+        "salaryPeriod": "yearly",
+        **extra,
     }
 
 
 def arbeitnow_job(number: int, *, age_hours: int = 1, **extra) -> dict:
     return {
-        "slug": f"it-support-{number}", "company_name": "Synthetic GmbH", "title": f"IT Support Specialist {number}",
-        "description": "<p>Support users.</p>", "remote": False, "url": f"https://www.arbeitnow.com/jobs/companies/x/it-support-{number}",
-        "tags": [], "job_types": [], "location": "Berlin", "created_at": int((NOW - timedelta(hours=age_hours)).timestamp()), **extra,
+        "slug": f"it-support-{number}",
+        "company_name": "Synthetic GmbH",
+        "title": f"IT Support Specialist {number}",
+        "description": "<p>Support users.</p>",
+        "remote": False,
+        "url": f"https://www.arbeitnow.com/jobs/companies/x/it-support-{number}",
+        "tags": [],
+        "job_types": [],
+        "location": "Berlin",
+        "created_at": int((NOW - timedelta(hours=age_hours)).timestamp()),
+        **extra,
     }
 
 
@@ -64,10 +81,12 @@ def recorder(pages):
 
 
 def test_jobicy_follows_the_cursor_and_maps_the_documented_fields() -> None:
-    fetch, calls = recorder([
-        {"jobs": [jobicy_job(1)], "nextCursor": "abc", "hasMore": True},
-        {"jobs": [jobicy_job(2)], "nextCursor": None, "hasMore": False},
-    ])
+    fetch, calls = recorder(
+        [
+            {"jobs": [jobicy_job(1)], "nextCursor": "abc", "hasMore": True},
+            {"jobs": [jobicy_job(2)], "nextCursor": None, "hasMore": False},
+        ]
+    )
     listings = JobicySource(fetcher=fetch).fetch()
     assert [item.source_listing_id for item in listings] == ["1", "2"]
     assert calls[0].startswith("https://jobicy.com/api/v2/remote-jobs?count=200") and "cursor=abc" in calls[1]
@@ -93,7 +112,9 @@ def test_an_empty_feed_is_a_success_and_a_malformed_one_is_a_failure() -> None:
 
 
 def test_off_host_or_insecure_links_are_not_trusted() -> None:
-    fetch, _ = recorder([{"jobs": [jobicy_job(1, url="https://evil.example/jobs/1"), jobicy_job(2, url="http://jobicy.com/jobs/2")]}])
+    fetch, _ = recorder(
+        [{"jobs": [jobicy_job(1, url="https://evil.example/jobs/1"), jobicy_job(2, url="http://jobicy.com/jobs/2")]}]
+    )
     listings = JobicySource(fetcher=fetch).fetch()
     assert all(item.application_url == "" and item.listing_url is None for item in listings)
 
@@ -104,10 +125,12 @@ def test_salary_without_a_currency_or_in_the_wrong_order_is_dropped() -> None:
 
 
 def test_arbeitnow_reads_pages_until_next_is_missing_and_never_assumes_onsite() -> None:
-    fetch, calls = recorder([
-        {"data": [arbeitnow_job(1)], "links": {"next": "https://www.arbeitnow.com/api/job-board-api?page=2"}},
-        {"data": [arbeitnow_job(2, remote=True)], "links": {"next": None}},
-    ])
+    fetch, calls = recorder(
+        [
+            {"data": [arbeitnow_job(1)], "links": {"next": "https://www.arbeitnow.com/api/job-board-api?page=2"}},
+            {"data": [arbeitnow_job(2, remote=True)], "links": {"next": None}},
+        ]
+    )
     listings = ArbeitnowSource(fetcher=fetch).fetch()
     assert [call.rsplit("=", 1)[1] for call in calls] == ["1", "2"]
     assert [item.stated_workplace_type for item in listings] == [None, "remote"]
@@ -125,12 +148,23 @@ def test_arbeitnow_incremental_refresh_stops_at_older_jobs_and_pages_are_capped(
 
 
 def test_remoteok_skips_the_legal_notice_and_reads_dates() -> None:
-    fetch, _ = recorder([[
-        {"last_updated": 1, "legal": "Please link back to Remote OK."},
-        {"id": "991", "position": "Technical Support Engineer", "company": "Synthetic Inc", "location": "",
-         "date": "2026-10-16T17:55:35+00:00", "url": "https://remoteok.com/remote-jobs/991",
-         "apply_url": "https://remoteok.com/l/991", "description": "<b>Support</b>"},
-    ]])
+    fetch, _ = recorder(
+        [
+            [
+                {"last_updated": 1, "legal": "Please link back to Remote OK."},
+                {
+                    "id": "991",
+                    "position": "Technical Support Engineer",
+                    "company": "Synthetic Inc",
+                    "location": "",
+                    "date": "2026-10-16T17:55:35+00:00",
+                    "url": "https://remoteok.com/remote-jobs/991",
+                    "apply_url": "https://remoteok.com/l/991",
+                    "description": "<b>Support</b>",
+                },
+            ]
+        ]
+    )
     (listing,) = RemoteOkSource(fetcher=fetch).fetch()
     assert listing.source_listing_id == "991" and listing.application_url == "https://remoteok.com/l/991"
     assert listing.posted_at == datetime(2026, 10, 16, 17, 55, 35, tzinfo=UTC) and listing.location_text is None
@@ -210,8 +244,12 @@ def test_only_one_discovery_pass_runs_at_a_time(database) -> None:
         with pytest.raises(DiscoveryBusy):
             with discovery_lock(factory):
                 pass
-        code = cli.main(["discover-registry", "--source", "jobicy"], output=messages.append, session_factory=factory,
-                        registry_source_factory=lambda entry: pytest.fail("must not fetch while locked"))
+        code = cli.main(
+            ["discover-registry", "--source", "jobicy"],
+            output=messages.append,
+            session_factory=factory,
+            registry_source_factory=lambda entry: pytest.fail("must not fetch while locked"),
+        )
     assert code == 3 and "Another discovery pass is running" in messages[-1]
 
 
@@ -221,7 +259,11 @@ def test_cli_validates_the_registry_and_summarises_runs(database) -> None:
     assert cli.main(["validate-sources"], output=messages.append) == 0
     assert messages[-1].startswith("Registry valid:") and "jobicy 1" in messages[-1]
     with factory.begin() as session:
-        session.add(JobDiscoveryRun(source_kind="jobicy", source_key="public", status="running", started_at=NOW - timedelta(hours=3)))
+        session.add(
+            JobDiscoveryRun(
+                source_kind="jobicy", source_key="public", status="running", started_at=NOW - timedelta(hours=3)
+            )
+        )
     messages.clear()
     assert cli.main(["discovery-status"], output=messages.append, session_factory=factory) == 1
     assert any(line.startswith("- jobicy: interrupted") for line in messages)
@@ -229,7 +271,9 @@ def test_cli_validates_the_registry_and_summarises_runs(database) -> None:
 
 
 def test_a_recent_running_run_is_not_called_interrupted() -> None:
-    run = JobDiscoveryRun(source_kind="jobicy", source_key="public", status="running", started_at=NOW - timedelta(minutes=5))
+    run = JobDiscoveryRun(
+        source_kind="jobicy", source_key="public", status="running", started_at=NOW - timedelta(minutes=5)
+    )
     assert effective_run_status(run, NOW) == "running"
     assert effective_run_status(run, NOW + timedelta(hours=2)) == "interrupted"
 
@@ -247,8 +291,11 @@ def synchronous_refresh(monkeypatch):
         return original(factory, entries, full=full, launch=lambda work: work())
 
     monkeypatch.setattr("app.api.v1.job_discovery.run_refresh_in_background", inline)
-    monkeypatch.setattr(discovery_runner, "_default_builder",
-                        lambda entry: JobicySource(fetcher=recorder(lambda url: {"jobs": [jobicy_job(1)]})[0]))
+    monkeypatch.setattr(
+        discovery_runner,
+        "_default_builder",
+        lambda entry: JobicySource(fetcher=recorder(lambda url: {"jobs": [jobicy_job(1)]})[0]),
+    )
 
 
 def test_refresh_endpoint_starts_a_pass_and_reports_progress(api_client: TestClient, synchronous_refresh) -> None:
@@ -260,7 +307,9 @@ def test_refresh_endpoint_starts_a_pass_and_reports_progress(api_client: TestCli
     assert runs[0]["source_id"] == "jobicy" and runs[0]["display_status"] == "succeeded"
 
 
-def test_refresh_endpoint_rejects_unknown_manual_and_concurrent_requests(api_client: TestClient, synchronous_refresh, monkeypatch) -> None:
+def test_refresh_endpoint_rejects_unknown_manual_and_concurrent_requests(
+    api_client: TestClient, synchronous_refresh, monkeypatch
+) -> None:
     assert api_client.post("/api/v1/job-discovery/refresh", json={"sources": ["nope"]}).status_code == 422
     manual = next(entry.id for entry in load_registry() if entry.method == "manual")
     assert api_client.post("/api/v1/job-discovery/refresh", json={"sources": [manual]}).status_code == 422
@@ -276,21 +325,48 @@ def test_refresh_router_has_only_the_start_and_progress_routes() -> None:
     from app.api.v1.job_discovery import router
 
     assert sorted((route.path, *sorted(route.methods)) for route in router.routes) == [
-        ("/job-discovery/refresh", "GET"), ("/job-discovery/refresh", "POST")]
+        ("/job-discovery/refresh", "GET"),
+        ("/job-discovery/refresh", "POST"),
+    ]
 
 
 # --- listing filters, sorting, provenance and eligibility of aggregator jobs ----------------
 
 
-def _store(factory, title: str, *, kind="jobicy", key="public", category="aggregator", workplace=None,
-           posted=None, first_seen=NOW, description="Join us.", location="Anywhere") -> str:
+def _store(
+    factory,
+    title: str,
+    *,
+    kind="jobicy",
+    key="public",
+    category="aggregator",
+    workplace=None,
+    posted=None,
+    first_seen=NOW,
+    description="Join us.",
+    location="Anywhere",
+) -> str:
     with factory.begin() as session:
         row = JobListing(
-            source_kind=kind, source_key=key, source_listing_id=str(uuid4()), source_url="https://jobicy.com/api/v2/remote-jobs",
-            listing_url="https://jobicy.com/jobs/1", application_url="https://jobicy.com/jobs/1", employer_name="Synthetic Co",
-            title=title, description_text=description, location_text=location, source_category=category,
-            stated_workplace_type=workplace, content_hash=uuid4().hex * 2, dedupe_key=uuid4().hex * 2, source_status="active",
-            posted_at=posted, first_seen_at=first_seen, last_seen_at=first_seen, last_verified_at=first_seen,
+            source_kind=kind,
+            source_key=key,
+            source_listing_id=str(uuid4()),
+            source_url="https://jobicy.com/api/v2/remote-jobs",
+            listing_url="https://jobicy.com/jobs/1",
+            application_url="https://jobicy.com/jobs/1",
+            employer_name="Synthetic Co",
+            title=title,
+            description_text=description,
+            location_text=location,
+            source_category=category,
+            stated_workplace_type=workplace,
+            content_hash=uuid4().hex * 2,
+            dedupe_key=uuid4().hex * 2,
+            source_status="active",
+            posted_at=posted,
+            first_seen_at=first_seen,
+            last_seen_at=first_seen,
+            last_verified_at=first_seen,
         )
         session.add(row)
         session.flush()
@@ -299,17 +375,41 @@ def _store(factory, title: str, *, kind="jobicy", key="public", category="aggreg
 
 def test_source_workplace_sort_and_posting_date_provenance(api_client: TestClient, database) -> None:
     _, factory = database
-    _store(factory, "Seller Support Associate", workplace="remote", posted=NOW - timedelta(days=2), first_seen=NOW - timedelta(days=1))
-    _store(factory, "Backend Engineer", workplace="remote", posted=NOW - timedelta(hours=1), first_seen=NOW - timedelta(days=3))
-    _store(factory, "Help Desk Analyst", kind="greenhouse", key="gitlab", category="direct_employer", workplace="onsite",
-           posted=None, first_seen=NOW - timedelta(hours=2))
+    _store(
+        factory,
+        "Seller Support Associate",
+        workplace="remote",
+        posted=NOW - timedelta(days=2),
+        first_seen=NOW - timedelta(days=1),
+    )
+    _store(
+        factory,
+        "Backend Engineer",
+        workplace="remote",
+        posted=NOW - timedelta(hours=1),
+        first_seen=NOW - timedelta(days=3),
+    )
+    _store(
+        factory,
+        "Help Desk Analyst",
+        kind="greenhouse",
+        key="gitlab",
+        category="direct_employer",
+        workplace="onsite",
+        posted=None,
+        first_seen=NOW - timedelta(hours=2),
+    )
 
     def titles(query: str) -> list[str]:
         return [item["title"] for item in api_client.get(f"{API}?{query}").json()["items"]]
 
     assert titles("source=jobicy") == ["Backend Engineer", "Seller Support Associate"]
     assert titles("workplace=onsite") == ["Help Desk Analyst"]
-    assert titles("sort=posted") == ["Backend Engineer", "Seller Support Associate", "Help Desk Analyst"]  # undated last
+    assert titles("sort=posted") == [
+        "Backend Engineer",
+        "Seller Support Associate",
+        "Help Desk Analyst",
+    ]  # undated last
     assert titles("sort=discovered") == ["Help Desk Analyst", "Seller Support Associate", "Backend Engineer"]
     assert titles("sort=relevance") == ["Seller Support Associate", "Help Desk Analyst", "Backend Engineer"]
     assert titles("role_family=ecommerce_support") == ["Seller Support Associate"]
@@ -324,8 +424,13 @@ def test_source_workplace_sort_and_posting_date_provenance(api_client: TestClien
 
 def test_aggregator_kenya_wording_is_never_treated_as_authoritative(api_client: TestClient, database) -> None:
     _, factory = database
-    _store(factory, "Customer Support Agent", location="Remote - Kenya",
-           description="This role is open to candidates based in Kenya.", posted=NOW - timedelta(hours=1))
+    _store(
+        factory,
+        "Customer Support Agent",
+        location="Remote - Kenya",
+        description="This role is open to candidates based in Kenya.",
+        posted=NOW - timedelta(hours=1),
+    )
     (item,) = api_client.get(API).json()["items"]
     assert item["kenya_eligibility"]["state"] == "unverified"
     assert api_client.get(f"{API}?kenya=eligible").json()["total"] == 0
@@ -339,9 +444,15 @@ def test_pipeline_accepts_several_role_groups_and_exclusions(api_client: TestCli
     profile_id = api_client.post("/api/v1/candidate-profiles", json={"name": "Amina Wanjiru"}).json()["id"]
 
     def titles(query: str) -> set[str]:
-        result = api_client.get(f"/api/v1/candidate-profiles/{profile_id}/job-pipeline?include_fit=false&{query}").json()
+        result = api_client.get(
+            f"/api/v1/candidate-profiles/{profile_id}/job-pipeline?include_fit=false&{query}"
+        ).json()
         return {card["title"] for cards in result["queues"].values() for card in cards}
 
     assert titles("role_family=support_it") == {"Help Desk Analyst"}
     assert titles("role_family=support_it&role_family=customer_support") == {"Help Desk Analyst", "Customer Care Agent"}
-    assert titles("exclude_role_family=ecommerce_support") == {"Help Desk Analyst", "Customer Care Agent", "Backend Engineer"}
+    assert titles("exclude_role_family=ecommerce_support") == {
+        "Help Desk Analyst",
+        "Customer Care Agent",
+        "Backend Engineer",
+    }

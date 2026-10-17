@@ -50,9 +50,7 @@ def render_cv(content: CVStructuredContent) -> str:
         lines.extend((section.heading, ""))
         if section.heading == "Professional Experience":
             for role in section.roles:
-                lines.append(
-                    f"{role.job_title} at {role.employer} | {role.dates}"
-                )
+                lines.append(f"{role.job_title} at {role.employer} | {role.dates}")
                 lines.extend(f"- {bullet.text}" for bullet in role.bullets)
                 lines.append("")
         else:
@@ -148,13 +146,16 @@ def generate_cv_draft(
         )
     )
     # Evidence whose excerpt no longer matches the current extraction is left out.
-    evidence = current_only(session, list(
-        session.scalars(
-            select(CandidateEvidence)
-            .where(CandidateEvidence.candidate_profile_id == profile_id)
-            .order_by(CandidateEvidence.created_at)
-        )
-    ))
+    evidence = current_only(
+        session,
+        list(
+            session.scalars(
+                select(CandidateEvidence)
+                .where(CandidateEvidence.candidate_profile_id == profile_id)
+                .order_by(CandidateEvidence.created_at)
+            )
+        ),
+    )
 
     content = (provider or DeterministicCVContentProvider()).generate(
         profile,
@@ -168,9 +169,7 @@ def generate_cv_draft(
     references = _collect_references(content)
     errors = validate_cv_content(content, rendered)
     if len(rendered) > 4500:
-        warnings = [
-            "This draft may exceed one page; readability takes priority over reducing font size."
-        ]
+        warnings = ["This draft may exceed one page; readability takes priority over reducing font size."]
     else:
         warnings = []
     gaps = _required_skill_gaps(job, profile, skills, experiences, evidence)
@@ -212,16 +211,9 @@ def persist_cv_draft(
         job_description_id=job.id,
         status=outcome.status,
         generated_content=outcome.generated_content,
-        structured_content=(
-            outcome.structured_content.model_dump(mode="json")
-            if outcome.structured_content
-            else None
-        ),
+        structured_content=(outcome.structured_content.model_dump(mode="json") if outcome.structured_content else None),
         validation_results=outcome.validation_results.model_dump(mode="json"),
-        source_references=[
-            reference.model_dump(mode="json")
-            for reference in outcome.source_references
-        ],
+        source_references=[reference.model_dump(mode="json") for reference in outcome.source_references],
     )
     session.add(draft)
     session.commit()

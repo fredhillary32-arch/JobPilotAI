@@ -4,6 +4,7 @@ Entries are research records, not crawl targets: only entries with a verified
 board on a supported public API are enabled, and manual-only entries are never
 fetched. Validation runs on load so a malformed registry fails loudly.
 """
+
 import json
 import re
 from dataclasses import dataclass, field
@@ -80,7 +81,9 @@ class SourceEntry:
             host == item or host.endswith(f".{item}") for item in AGGREGATOR_SOURCES[self.method].page_hosts
         ):
             return True
-        return any(host == domain or host.endswith(f".{domain}") for domain in (self.official_domain, *self.additional_domains))
+        return any(
+            host == domain or host.endswith(f".{domain}") for domain in (self.official_domain, *self.additional_domains)
+        )
 
     def build_source(self) -> JobSource:
         if not self.enabled or self.board is None:
@@ -148,11 +151,19 @@ def parse_registry(data: dict) -> tuple[SourceEntry, ...]:
         if checked is not None:
             datetime.fromisoformat(checked.replace("Z", "+00:00"))
         entry = SourceEntry(
-            id=identifier, name=raw["name"], category=category,
-            official_domain=domains[0], additional_domains=tuple(domains[1:]),
-            careers_url=raw["careers_url"], method=method, board=board,
-            instance=discovery.get("instance"), enabled=enabled, verification=verification,
-            terms=raw.get("terms", ""), limitations=raw.get("limitations", ""),
+            id=identifier,
+            name=raw["name"],
+            category=category,
+            official_domain=domains[0],
+            additional_domains=tuple(domains[1:]),
+            careers_url=raw["careers_url"],
+            method=method,
+            board=board,
+            instance=discovery.get("instance"),
+            enabled=enabled,
+            verification=verification,
+            terms=raw.get("terms", ""),
+            limitations=raw.get("limitations", ""),
             focus=tuple(raw.get("focus", [])),
         )
         if entry.source_key is not None:

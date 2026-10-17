@@ -59,11 +59,7 @@ class CandidateWorkExperienceUpdate(BaseModel):
         for field_name in ("employer", "job_title", "start_date", "current_role", "achievements"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
-        if (
-            self.start_date is not None
-            and self.end_date is not None
-            and self.end_date < self.start_date
-        ):
+        if self.start_date is not None and self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
         if self.current_role and self.end_date is not None:
             raise ValueError("current roles cannot have an end_date")
@@ -98,11 +94,7 @@ class CandidateEducationUpdate(BaseModel):
         for field_name in ("institution", "qualification", "start_date"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
-        if (
-            self.start_date is not None
-            and self.end_date is not None
-            and self.end_date < self.start_date
-        ):
+        if self.start_date is not None and self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
         return self
 
@@ -151,11 +143,7 @@ class CandidateCertificationUpdate(BaseModel):
         for field_name in ("name", "issuer", "issue_date"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
-        if (
-            self.issue_date is not None
-            and self.expires_on is not None
-            and self.expires_on < self.issue_date
-        ):
+        if self.issue_date is not None and self.expires_on is not None and self.expires_on < self.issue_date:
             raise ValueError("expires_on must be on or after issue_date")
         return self
 

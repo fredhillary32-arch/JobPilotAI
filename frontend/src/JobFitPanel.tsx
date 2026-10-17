@@ -22,18 +22,31 @@ function FitList({ title, items, empty }: { title: string; items: FitItem[]; emp
 }
 
 export function JobFitPanel({ profileId, jobId, refreshKey }: { profileId: string; jobId: string; refreshKey: unknown }) {
-  const [fit, setFit] = useState<JobFit | null>(null);
-  const [error, setError] = useState("");
+  const [result, setResult] = useState<{ key: string; refreshKey: unknown; fit: JobFit } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; refreshKey: unknown; message: string } | null>(null);
+  const key = `${profileId}|${jobId}`;
+  const fit = result?.key === key && Object.is(result.refreshKey, refreshKey) ? result.fit : null;
+  const error = failure?.key === key && Object.is(failure.refreshKey, refreshKey)
+    ? failure.message
+    : "";
 
   useEffect(() => {
     let current = true;
-    setFit(null);
-    setError("");
     api.getJobFit(profileId, jobId)
-      .then((value) => { if (current) setFit(value); })
-      .catch((caught: unknown) => { if (current) setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "Job fit could not be checked."); });
+      .then((value) => { if (current) setResult({ key, refreshKey, fit: value }); })
+      .catch((caught: unknown) => {
+        if (current) {
+          setFailure({
+            key,
+            refreshKey,
+            message: caught instanceof ApiError || caught instanceof Error
+              ? caught.message
+              : "Job fit could not be checked.",
+          });
+        }
+      });
     return () => { current = false; };
-  }, [profileId, jobId, refreshKey]);
+  }, [profileId, jobId, refreshKey, key]);
 
   if (error) return <p className="feedback-error setup-error" role="alert">{error}</p>;
   if (!fit) return <p className="muted" role="status">Checking job fit…</p>;

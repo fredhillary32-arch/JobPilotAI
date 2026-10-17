@@ -1,4 +1,5 @@
 """Reviewed Kenya eligibility (docs/JOB_ELIGIBILITY_SPEC.md; case IDs in comments)."""
+
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -153,7 +154,10 @@ def test_reviewed_unknown_needs_no_quotation(api_client: TestClient, database) -
 
     response = api_client.post(
         f"{API}/{listing_id}/eligibility-assessments",
-        json={"outcome": "eligibility_unknown", "explanation": "\"Remote\" without geography does not establish eligibility."},
+        json={
+            "outcome": "eligibility_unknown",
+            "explanation": '"Remote" without geography does not establish eligibility.',
+        },
     )
 
     assert response.status_code == 201
@@ -194,7 +198,9 @@ def test_whitespace_only_or_removed_text_is_a_change(api_client: TestClient, dat
     assert _eligibility(api_client, removed)["currency"] == "stale"
 
 
-def test_timestamp_only_changes_keep_the_assessment_current(api_client: TestClient, database) -> None:  # EV-02, EV-03, EV-09
+def test_timestamp_only_changes_keep_the_assessment_current(
+    api_client: TestClient, database
+) -> None:  # EV-02, EV-03, EV-09
     _, factory = database
     listing_id = _store_listing(factory)
     assert _confirm(api_client, listing_id).status_code == 201
@@ -232,17 +238,22 @@ def test_listings_can_be_filtered_by_effective_eligibility(api_client: TestClien
     _, factory = database
     confirmed = _store_listing(factory, title="Confirmed role")
     stale = _store_listing(factory, title="Stale role")
-    excluded = _store_listing(factory, title="Excluded role", description_text="Applicants must reside in the United Kingdom.")
+    excluded = _store_listing(
+        factory, title="Excluded role", description_text="Applicants must reside in the United Kingdom."
+    )
     unassessed = _store_listing(factory, title="Unassessed role")
     assert _confirm(api_client, confirmed).status_code == 201
     assert _confirm(api_client, stale).status_code == 201
-    assert _confirm(
-        api_client,
-        excluded,
-        outcome="not_eligible",
-        explanation="Applicants must live in the UK.",
-        quotation="Applicants must reside in the United Kingdom.",
-    ).status_code == 201
+    assert (
+        _confirm(
+            api_client,
+            excluded,
+            outcome="not_eligible",
+            explanation="Applicants must live in the UK.",
+            quotation="Applicants must reside in the United Kingdom.",
+        ).status_code
+        == 201
+    )
     _update_listing(factory, stale, description_text=DESCRIPTION + " Updated.")
 
     def titles(state: str) -> set[str]:

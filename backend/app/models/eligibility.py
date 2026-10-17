@@ -12,8 +12,15 @@ STATEMENT_SCOPES = ("role", "company", "team", "market_or_customer", "unclear")
 ROLE_APPLICABILITIES = ("direct", "established_by_wording", "unclear", "not_applicable")
 # What the reviewed wording establishes geographically; recorded alongside the outcome.
 GEOGRAPHIC_SCOPES = (
-    "kenya_named", "africa", "emea", "worldwide", "other_countries", "restricted",
-    "conflicting", "unclear", "awaiting_employer",
+    "kenya_named",
+    "africa",
+    "emea",
+    "worldwide",
+    "other_countries",
+    "restricted",
+    "conflicting",
+    "unclear",
+    "awaiting_employer",
 )
 SCOPES_BY_OUTCOME = {
     "eligible_confirmed": ("kenya_named", "africa", "emea", "worldwide"),

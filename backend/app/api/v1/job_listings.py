@@ -22,13 +22,13 @@ from app.schemas.job_listing import (
     ListingSourceRead,
 )
 from app.services.auth import utc_now
+from app.services.discovery_runner import effective_run_status
 from app.services.eligibility import (
     effective_eligibility,
     effective_status_sql,
     latest_assessment_ids,
     latest_assessments_for,
 )
-from app.services.discovery_runner import effective_run_status
 from app.services.kenya_eligibility import decide_cached
 from app.services.link_verification import latest_link_checks
 from app.services.role_relevance import CANDIDATE_SUBSTRINGS, classify_title
@@ -66,7 +66,8 @@ def _latest_check_exists(outcome: str, kind: str | None = None):
     conditions = [
         check.job_listing_id == JobListing.id,
         check.outcome == outcome,
-        check.checked_at == (
+        check.checked_at
+        == (
             select(func.max(JobListingLinkCheck.checked_at))
             .where(JobListingLinkCheck.job_listing_id == JobListing.id, JobListingLinkCheck.url_kind == check.url_kind)
             .correlate(JobListing, check)
@@ -89,13 +90,19 @@ def _source_read(row: JobListing) -> ListingSourceRead:
         return ListingSourceRead(registered=False)
     checked = entry.verification.get("checked_at")
     return ListingSourceRead(
-        registered=True, registry_id=entry.id, name=entry.name, category=entry.category,
-        official_domain=entry.official_domain, verification_outcome=entry.verification.get("outcome"),
+        registered=True,
+        registry_id=entry.id,
+        name=entry.name,
+        category=entry.category,
+        official_domain=entry.official_domain,
+        verification_outcome=entry.verification.get("outcome"),
         verification_checked_at=checked.replace("Z", "+00:00") if checked else None,
     )
 
 
-def _enriched(row: JobListing, assessment, checks: dict, group_size: int, model=JobListingRead, decision: dict | None = None):
+def _enriched(
+    row: JobListing, assessment, checks: dict, group_size: int, model=JobListingRead, decision: dict | None = None
+):
     links = ListingLinksRead(
         listing=LinkCheckRead.model_validate(checks["listing"]) if "listing" in checks else None,
         application=LinkCheckRead.model_validate(checks["application"]) if "application" in checks else None,
@@ -106,16 +113,18 @@ def _enriched(row: JobListing, assessment, checks: dict, group_size: int, model=
         vacancy = "link_expired"
     else:
         vacancy = "listed_by_source"
-    return model.model_validate(row).model_copy(update={
-        "eligibility": EligibilityAssessmentRead(**effective_eligibility(row, assessment)),
-        "source": _source_read(row),
-        "links": links,
-        "vacancy_status": vacancy,
-        "duplicate_group_size": group_size,
-        "kenya_eligibility": decision if decision is not None else decide_cached(row, assessment, None),
-        "role_match": _role_match(row.title),
-        "posted_at_source": posted_at_source(row),
-    })
+    return model.model_validate(row).model_copy(
+        update={
+            "eligibility": EligibilityAssessmentRead(**effective_eligibility(row, assessment)),
+            "source": _source_read(row),
+            "links": links,
+            "vacancy_status": vacancy,
+            "duplicate_group_size": group_size,
+            "kenya_eligibility": decision if decision is not None else decide_cached(row, assessment, None),
+            "role_match": _role_match(row.title),
+            "posted_at_source": posted_at_source(row),
+        }
+    )
 
 
 def posted_at_source(row: JobListing) -> str | None:
@@ -146,14 +155,21 @@ def keyword_terms(q: str | None) -> list[str]:
 
 
 def keyword_condition(terms: list[str]):
-    return or_(*(column.ilike(_like(term), escape="\\") for term in terms
-                 for column in (JobListing.title, JobListing.employer_name)))
+    return or_(
+        *(
+            column.ilike(_like(term), escape="\\")
+            for term in terms
+            for column in (JobListing.title, JobListing.employer_name)
+        )
+    )
 
 
 def source_condition(source: str):
     entry = next((item for item in load_registry() if item.id == source), None)
     if entry is None or entry.source_key is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Unknown or manual-only source: {source}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Unknown or manual-only source: {source}"
+        )
     return (JobListing.source_kind == entry.source_kind) & (JobListing.source_key == entry.source_key)
 
 
@@ -235,10 +251,12 @@ def list_job_listings(
         select(
             JobListing.id.label("id"),
             source_label.label("source_label"),
-            func.first_value(source_label).over(
+            func.first_value(source_label)
+            .over(
                 partition_by=JobListing.dedupe_key,
                 order_by=(CATEGORY_PRIORITY, JobListing.first_seen_at, JobListing.id),
-            ).label("preferred_source"),
+            )
+            .label("preferred_source"),
             (
                 func.count().over(partition_by=JobListing.dedupe_key)
                 - func.count().over(partition_by=(JobListing.dedupe_key, JobListing.source_kind, JobListing.source_key))
@@ -259,7 +277,9 @@ def list_job_listings(
     if sort == "discovered":
         ordered = query.order_by(JobListing.first_seen_at.desc(), JobListing.id)
     else:
-        ordered = query.order_by(JobListing.posted_at.desc().nulls_last(), JobListing.first_seen_at.desc(), JobListing.id)
+        ordered = query.order_by(
+            JobListing.posted_at.desc().nulls_last(), JobListing.first_seen_at.desc(), JobListing.id
+        )
     decisions: dict = {}
     if kenya is None and keep_role is None and sort != "relevance":
         total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -284,13 +304,15 @@ def list_job_listings(
                 return 0 if match and (not wanted or match.group in wanted) else 1
 
             matching = sorted(matching, key=relevance)
-        total, rows = len(matching), matching[offset:offset + limit]
+        total, rows = len(matching), matching[offset : offset + limit]
     ids = [row.id for row, _ in rows]
     assessments = latest_assessments_for(session, ids)
     checks = latest_link_checks(session, ids)
     return JobListingPage(
-        items=[_enriched(row, assessments.get(row.id), checks.get(row.id, {}), size, decision=decisions.get(row.id))
-               for row, size in rows],
+        items=[
+            _enriched(row, assessments.get(row.id), checks.get(row.id, {}), size, decision=decisions.get(row.id))
+            for row, size in rows
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -317,7 +339,9 @@ def read_job_listing(listing_id: UUID, session: DatabaseSession) -> JobListingDe
         len(alternates) + 1,
         JobListingDetailRead,
     )
-    return detail.model_copy(update={"alternates": [AlternateListingRead.model_validate(a, from_attributes=True) for a in alternates]})
+    return detail.model_copy(
+        update={"alternates": [AlternateListingRead.model_validate(a, from_attributes=True) for a in alternates]}
+    )
 
 
 @router.get("/job-discovery/runs", response_model=list[JobDiscoveryRunRead])
@@ -332,11 +356,15 @@ def list_discovery_runs(
     reads = []
     for run in runs:
         entry = entry_for_source(run.source_kind, run.source_key)
-        reads.append(JobDiscoveryRunRead.model_validate(run).model_copy(update={
-            "display_status": effective_run_status(run, now),
-            "source_id": entry.id if entry else None,
-            "source_name": entry.name if entry else None,
-        }))
+        reads.append(
+            JobDiscoveryRunRead.model_validate(run).model_copy(
+                update={
+                    "display_status": effective_run_status(run, now),
+                    "source_id": entry.id if entry else None,
+                    "source_name": entry.name if entry else None,
+                }
+            )
+        )
     return reads
 
 
@@ -379,16 +407,26 @@ def list_job_sources(session: DatabaseSession) -> list[dict]:
             health = "stale"
         else:
             health = "healthy"
-        sources.append({
-            "id": entry.id, "name": entry.name, "category": entry.category,
-            "official_domain": entry.official_domain, "careers_url": entry.careers_url,
-            "method": entry.method, "board": entry.board, "enabled": entry.enabled,
-            "verification": entry.verification, "terms": entry.terms, "limitations": entry.limitations,
-            "health": health, "consecutive_failures": failures,
-            "last_run_at": history[0].started_at if history else None,
-            "last_run_status": history[0].status if history else None,
-            "last_error_category": history[0].error_category if history else None,
-            "last_success_at": last_success_at,
-            "active_listings": counts.get(f"{entry.source_kind}:{entry.source_key}", 0),
-        })
+        sources.append(
+            {
+                "id": entry.id,
+                "name": entry.name,
+                "category": entry.category,
+                "official_domain": entry.official_domain,
+                "careers_url": entry.careers_url,
+                "method": entry.method,
+                "board": entry.board,
+                "enabled": entry.enabled,
+                "verification": entry.verification,
+                "terms": entry.terms,
+                "limitations": entry.limitations,
+                "health": health,
+                "consecutive_failures": failures,
+                "last_run_at": history[0].started_at if history else None,
+                "last_run_status": history[0].status if history else None,
+                "last_error_category": history[0].error_category if history else None,
+                "last_success_at": last_success_at,
+                "active_listings": counts.get(f"{entry.source_kind}:{entry.source_key}", 0),
+            }
+        )
     return sources
