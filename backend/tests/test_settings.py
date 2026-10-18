@@ -23,3 +23,26 @@ def test_database_url_uses_safe_url_construction_and_configured_host_port() -> N
     assert url.database == "jobpilot"
     assert "p%40ss%3A%2F%25word" in url.render_as_string(hide_password=False)
     assert password not in repr(settings)
+
+
+def test_cross_site_cookie_policy_requires_secure_cookies() -> None:
+    settings = Settings(
+        postgres_user="jobpilot",
+        postgres_password=SecretStr("test-password"),
+        postgres_db="jobpilot",
+        auth_cookie_samesite="none",
+    )
+
+    assert settings.auth_cookie_samesite == "none"
+    assert settings.auth_cookie_secure is True
+
+
+def test_database_url_supports_provider_required_tls() -> None:
+    settings = Settings(
+        postgres_user="jobpilot",
+        postgres_password=SecretStr("test-password"),
+        postgres_db="jobpilot",
+        postgres_sslmode="require",
+    )
+
+    assert settings.database_url.query["sslmode"] == "require"

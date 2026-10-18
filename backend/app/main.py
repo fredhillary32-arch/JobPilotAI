@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.candidate_documents import router as candidate_documents_router
@@ -19,6 +20,9 @@ from app.api.v1.listing_eligibility import router as listing_eligibility_router
 from app.api.v1.skill_confirmations import router as skill_confirmations_router
 from app.db import DatabaseSchemaNotCurrentError, check_database_connection
 from app.request_limits import BodySizeLimitMiddleware
+from app.settings import get_settings
+
+settings = get_settings()
 
 app = FastAPI(
     title="JobPilot AI API",
@@ -30,6 +34,13 @@ app = FastAPI(
 )
 
 app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.auth_allowed_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
+)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(candidate_profiles_router, prefix="/api/v1")

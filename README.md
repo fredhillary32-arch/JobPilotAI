@@ -57,8 +57,10 @@ documented public feed; they are registered as manual-only), Workable and other
 ATS platforms, scheduled re-checks, cover letters and screening answers,
 assisted submission, reminders beyond the dashboard, and interview preparation.
 
-This is a local, single-owner application. No push to a shared remote or any
-deployment is authorized; keep both servers bound to `127.0.0.1`.
+This application supports local development and separate frontend/backend
+hosting. The account bootstrap command creates only the first owner; plan
+account provisioning before making a hosted instance available to additional
+users.
 
 ## Local backend setup
 
@@ -568,10 +570,10 @@ npm run dev
 The Vite development and preview servers listen only on
 `http://127.0.0.1:5173` (with `strictPort`) and proxy `/api` requests to
 `http://127.0.0.1:8000`. Open the app at `http://127.0.0.1:5173`, not
-`localhost`: the API accepts only that exact browser Origin
-(`AUTH_ALLOWED_ORIGIN`), so another host name or port fails sign-in with HTTP
-403. Set the non-secret `VITE_API_BASE_URL` variable at build/start time to override
-the API base (include `/api/v1`), or set `VITE_CANDIDATE_PROFILE_ID` to
+`localhost`: the API accepts only the exact configured browser Origin
+(`AUTH_ALLOWED_ORIGIN`). Set the non-secret `VITE_API_BASE_URL` variable at
+build/start time to override the API base (include `/api/v1`), or set
+`VITE_CANDIDATE_PROFILE_ID` to
 preselect a profile after sign-in. The selected profile is only a convenience;
 the API authorizes every request. The frontend keeps session credentials in an
 HttpOnly cookie and the CSRF token in memory, never browser storage. On logout
@@ -608,11 +610,84 @@ PostgreSQL. On 2026-10-17: backend 378 passed (`pytest -q`), frontend 59
 passed (`npm test`), `npx tsc -b` clean.
 
 The login flow requires the exact configured browser Origin, pre-login and
-session-bound CSRF tokens, and same-origin API requests through the existing
-Vite `/api` proxy. For local HTTP development, explicitly enable
+session-bound CSRF tokens, and credentialed requests. Local development uses
+the existing Vite `/api` proxy. For local HTTP development, explicitly enable
 `AUTH_LOCAL_HTTP=true` only while both services are bound to loopback; cookies
-are Secure by default and Secure over HTTPS. Do not add permissive credentialed
-CORS or expose health endpoints publicly. See
+are Secure by default and Secure over HTTPS. See
 [docs/PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md) for the verified status,
 remaining database/integration blockers, and the safe migration and owner
 setup runbook.
+
+## Separate production deployment
+
+The backend and frontend deploy independently from this repository. Use custom
+domains under the same registrable domain (for example, `app.example.com` and
+`api.example.com`). This keeps browser cookies same-site while the requests are
+cross-origin. The backend allows credentials only from the single origin in
+`AUTH_ALLOWED_ORIGIN`; do not use `*`. Deploying on unrelated default domains
+such as `*.vercel.app` and `*.onrender.com` requires `AUTH_COOKIE_SAMESITE=none`
+and Secure cookies, and may still be blocked by browser third-party-cookie
+settings. A shared custom domain is the supported production setup.
+
+### Backend on Render
+
+Create a **Web Service** from the private GitHub repository with:
+
+- Root Directory: `backend`
+- Build Command: `pip install .`
+- Start Command: `python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Health Check Path: `/healthz`
+
+Set these backend-only environment variables in Render:
+
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST`, and
+  `POSTGRES_PORT`: credentials and connection details for the separately
+  provisioned PostgreSQL service. Keep the database private and allow network
+  access only from the backend host. Render's internal hostname is appropriate
+  when both services are in the same region and provider network.
+- `POSTGRES_SSLMODE=require` when the database provider requires TLS (for
+  example, when connecting over its public endpoint); omit it when the
+  provider's private internal connection does not require TLS.
+- `AUTH_ALLOWED_ORIGIN=https://app.example.com`: the exact Vercel custom
+  frontend origin, with no trailing slash.
+- `AUTH_COOKIE_SAMESITE=strict` and `AUTH_LOCAL_HTTP=false`.
+- `DOCUMENT_STORAGE_PATH=/var/data/documents`: place this directory on a
+  private persistent disk mounted at `/var/data`. Without persistent storage,
+  uploaded documents may be lost when the service restarts or redeploys.
+
+Run migrations explicitly from the backend service shell or a one-off command,
+after reviewing the release and confirming a database backup:
+
+```sh
+python -m alembic upgrade head
+```
+
+Do not run migrations automatically at web-service startup. Create the initial
+owner through an authorized secure shell session using
+`python -m app.cli bootstrap-owner`; enter the password only at its hidden
+prompt. The command refuses to create another owner once one exists. The
+`/readyz` endpoint reports database and migration readiness; configure it as a
+readiness check only if the host supports a separate readiness path.
+
+### Frontend on Vercel
+
+Import the same private repository as a separate Vercel project with:
+
+- Root Directory: `frontend`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Install Command: `npm install` (or the platform's lockfile-based default).
+
+Set the browser-visible build variable `VITE_API_BASE_URL` to
+`https://api.example.com/api/v1`. This value is included in browser code; never
+put credentials, tokens, or database URLs in any `VITE_` variable. Add the
+Vercel production custom domain `app.example.com`, then set the backend's
+`AUTH_ALLOWED_ORIGIN` to that exact origin and redeploy the backend. The Vite
+development proxy is local-only; production browser requests go directly to
+the configured API origin and use credentialed CORS.
+
+Provision PostgreSQL separately, create a private backup and retention policy,
+and verify network access before migration. Local PostgreSQL contents and
+private document files are not copied by either deployment. Do not migrate
+candidate records or uploaded documents without a separate approved migration
+and privacy plan.

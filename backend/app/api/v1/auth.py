@@ -61,7 +61,7 @@ def _set_cookie(
         max_age=max_age,
         httponly=True,
         secure=settings.auth_cookie_secure or request.url.scheme == "https",
-        samesite="strict",
+        samesite=settings.auth_cookie_samesite,
         path="/",
     )
 
@@ -76,7 +76,7 @@ def _clear_pre_auth_cookie(
         path="/",
         secure=settings.auth_cookie_secure or request.url.scheme == "https",
         httponly=True,
-        samesite="strict",
+        samesite=settings.auth_cookie_samesite,
     )
 
 

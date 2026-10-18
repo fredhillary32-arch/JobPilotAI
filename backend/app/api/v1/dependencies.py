@@ -37,7 +37,7 @@ def clear_session_cookie(
         path="/",
         secure=settings.auth_cookie_secure or request.url.scheme == "https",
         httponly=True,
-        samesite="strict",
+        samesite=settings.auth_cookie_samesite,
     )
 
 
@@ -47,7 +47,10 @@ def require_allowed_origin(request: Request, settings: Settings) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request origin is not allowed.",
         )
-    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+    if (
+        request.headers.get("sec-fetch-site", "").lower() == "cross-site"
+        and request.headers.get("origin") != settings.auth_allowed_origin
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request origin is not allowed.",
@@ -114,7 +117,7 @@ def get_authenticated_session(
         ),
         httponly=True,
         secure=settings.auth_cookie_secure or request.url.scheme == "https",
-        samesite="strict",
+        samesite=settings.auth_cookie_samesite,
         path="/",
     )
     return AuthenticatedSession(user=user, auth_session=auth_session)

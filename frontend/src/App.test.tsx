@@ -792,7 +792,7 @@ describe("JobPilot frontend", () => {
     expect(await screen.findByRole("heading", { name: "Good to see you, Taylor" })).toBeInTheDocument();
   });
 
-  it("logs in through a pre-auth challenge and uses same-origin requests", async () => {
+  it("logs in through a pre-auth challenge and uses credentialed cross-origin requests", async () => {
     sessionValid = false;
     const user = userEvent.setup();
     render(<App />);
@@ -809,8 +809,8 @@ describe("JobPilot frontend", () => {
     expect(challengeIndex).toBeGreaterThan(-1);
     expect(loginIndex).toBeGreaterThan(challengeIndex);
     expect(requests[loginIndex].headers.get("X-CSRF-Token")).toBe("pre-auth-csrf-test");
-    expect(requests[loginIndex].credentials).toBe("same-origin");
-    expect(requests[loginIndex].mode).toBe("same-origin");
+    expect(requests[loginIndex].credentials).toBe("include");
+    expect(requests[loginIndex].mode).toBe("cors");
     expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
     expect(window.localStorage.getItem("jobpilot.profileId")).toBe(profileId);
   });
@@ -900,7 +900,7 @@ describe("JobPilot frontend", () => {
     expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
     const logoutRequest = requests.find((request) => request.path.endsWith("/auth/logout"));
     expect(logoutRequest?.headers.get("X-CSRF-Token")).toBe("session-csrf-test");
-    expect(logoutRequest?.credentials).toBe("same-origin");
+    expect(logoutRequest?.credentials).toBe("include");
     expect(window.localStorage.getItem("jobpilot.profileId")).toBeNull();
     expect(requests.some((request) => request.path.includes("/candidate-profiles/"))).toBe(true);
   });
@@ -1303,7 +1303,7 @@ describe("JobPilot frontend", () => {
 
       await user.click(screen.getByRole("button", { name: "Download" }));
 
-      expect(await screen.findByText("The download could not reach the local API.")).toBeInTheDocument();
+      expect(await screen.findByText("The download could not reach the configured API.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
       expect(screen.queryByText("Downloading document…")).not.toBeInTheDocument();
     });

@@ -22,11 +22,13 @@ class Settings(BaseSettings):
     postgres_db: str = Field(validation_alias="POSTGRES_DB")
     postgres_host: str = Field(default="127.0.0.1", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5433, validation_alias="POSTGRES_PORT")
+    postgres_sslmode: str | None = Field(default=None, validation_alias="POSTGRES_SSLMODE")
     auth_allowed_origin: str = Field(
         default="http://127.0.0.1:5173",
         validation_alias="AUTH_ALLOWED_ORIGIN",
     )
     auth_local_http: bool = Field(default=False, validation_alias="AUTH_LOCAL_HTTP")
+    auth_cookie_samesite: str = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
     document_storage_path: Path = Field(
         default=PROJECT_ROOT / "var" / "documents",
         validation_alias="DOCUMENT_STORAGE_PATH",
@@ -34,7 +36,13 @@ class Settings(BaseSettings):
 
     @property
     def auth_cookie_secure(self) -> bool:
-        return not self.auth_local_http
+        return self.auth_cookie_samesite == "none" or not self.auth_local_http
+
+    @model_validator(mode="after")
+    def validate_cookie_samesite(self) -> "Settings":
+        if self.auth_cookie_samesite not in {"strict", "lax", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be strict, lax, or none.")
+        return self
 
     @model_validator(mode="after")
     def validate_local_http_origin(self) -> "Settings":
@@ -51,6 +59,7 @@ class Settings(BaseSettings):
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,
+            query={"sslmode": self.postgres_sslmode} if self.postgres_sslmode else {},
         )
 
     @property

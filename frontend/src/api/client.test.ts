@@ -20,6 +20,11 @@ it("ends a request that never answers with a readable timeout error", async () =
 });
 
 it("does not time out a request that answers in time", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })));
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetchMock);
   await expect(api.listJobs("profile-1")).resolves.toEqual([]);
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/candidate-profiles/profile-1/job-descriptions",
+    expect.objectContaining({ credentials: "include", mode: "cors" }),
+  );
 });

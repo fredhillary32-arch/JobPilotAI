@@ -141,6 +141,40 @@ def test_https_mode_sets_secure_pre_auth_cookie(auth_client) -> None:
     assert "secure" in response.headers["set-cookie"].lower()
 
 
+def test_configured_frontend_origin_gets_credentialed_cors(auth_client) -> None:
+    client, _ = auth_client
+    response = client.options(
+        PRE_AUTH_URL,
+        headers={
+            "Origin": ORIGIN,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == ORIGIN
+    assert response.headers["access-control-allow-credentials"] == "true"
+
+
+def test_cross_site_cookie_policy_is_applied_to_auth_cookies(auth_client) -> None:
+    client, _ = auth_client
+    settings = Settings(
+        postgres_user="test-user",
+        postgres_password="test-password",
+        postgres_db="test-db",
+        auth_allowed_origin=ORIGIN,
+        auth_cookie_samesite="none",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = client.get(PRE_AUTH_URL, headers={"Origin": ORIGIN})
+
+    assert response.status_code == 200
+    cookie_header = response.headers["set-cookie"].lower()
+    assert "samesite=none" in cookie_header
+    assert "secure" in cookie_header
+
+
 @pytest.mark.parametrize("account_state", ["unknown", "wrong_password", "inactive"])
 def test_login_failures_are_generic_and_do_not_create_session(
     auth_client,

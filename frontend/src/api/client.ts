@@ -141,8 +141,8 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers,
-      credentials: "same-origin",
-      mode: "same-origin",
+      credentials: "include",
+      mode: "cors",
       signal: controller.signal,
     });
   } catch {
@@ -155,7 +155,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     }
     throw new ApiError(
       0,
-      `Cannot connect to JobPilot API at ${API_BASE_URL}. Check that the local backend is running.`,
+      `Cannot connect to JobPilot API at ${API_BASE_URL}. Check the API URL and backend availability.`,
       null,
     );
   } finally {
@@ -208,8 +208,8 @@ export const api = {
     clearSessionCsrfToken();
     const challenge = await request<{ csrf_token: string }>("/auth/pre-auth-csrf", {
       method: "GET",
-      credentials: "same-origin",
-      mode: "same-origin",
+      credentials: "include",
+      mode: "cors",
     });
     const session = await request<SessionResponse>(
       "/auth/login",
@@ -220,8 +220,8 @@ export const api = {
           "X-CSRF-Token": challenge.csrf_token,
         },
         body: JSON.stringify({ email, password }),
-        credentials: "same-origin",
-        mode: "same-origin",
+        credentials: "include",
+        mode: "cors",
       },
     );
     sessionCsrfToken = session.csrf_token;
@@ -526,11 +526,11 @@ async function download(path: string): Promise<Blob> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
-      credentials: "same-origin",
-      mode: "same-origin",
+      credentials: "include",
+      mode: "cors",
     });
   } catch {
-    throw new ApiError(0, "The download could not reach the local API.", null);
+    throw new ApiError(0, "The download could not reach the configured API.", null);
   }
   if (!response.ok) {
     const data: unknown = await response.json().catch(() => null);
