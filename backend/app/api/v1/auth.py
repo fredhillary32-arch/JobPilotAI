@@ -22,18 +22,23 @@ from app.models.user import AuthSession, PreAuthChallenge, User
 from app.schemas.auth import (
     AuthenticatedUserResponse,
     LoginRequest,
+    PasswordChangeRequest,
     PreAuthChallengeResponse,
     SessionResponse,
 )
 from app.services.auth import (
     PRE_AUTH_CHALLENGE_LIFETIME,
+    AccountNotFoundError,
+    IncorrectCurrentPasswordError,
     UnsupportedAuthDatabaseError,
+    change_password as change_password_for_user,
     consume_pre_auth_challenge,
     create_auth_session,
     hash_token,
     normalize_database_datetime,
     normalize_login_email,
     utc_now,
+    validate_password,
     verify_login_password,
 )
 from app.services.login_limiter import login_failure_limiter
@@ -43,6 +48,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 PRE_AUTH_COOKIE_NAME = "jobpilot_pre_auth"
 CSRF_HEADER_NAME = "x-csrf-token"
 MAX_LOGIN_BODY_BYTES = 8192
+MAX_PASSWORD_CHANGE_BODY_BYTES = 8192
 GENERIC_LOGIN_ERROR = "Invalid email or password."
 
 
@@ -114,6 +120,37 @@ async def _parse_login_request(request: Request) -> LoginRequest:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid login request.",
+        ) from None
+
+
+async def _parse_password_change_request(request: Request) -> PasswordChangeRequest:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_PASSWORD_CHANGE_BODY_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Password change request is too large.",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid password change request.",
+            ) from None
+
+    body = await request.body()
+    if len(body) > MAX_PASSWORD_CHANGE_BODY_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Password change request is too large.",
+        )
+    try:
+        payload = json.loads(body)
+        return PasswordChangeRequest.model_validate(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password change request.",
         ) from None
 
 
@@ -337,6 +374,70 @@ def logout(
         ) from None
 
     _clear_pre_auth_cookie(request, response, settings)
+    clear_session_cookie(request, response, settings)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    request: Request,
+    response: Response,
+    authenticated: Annotated[
+        AuthenticatedSession,
+        Depends(require_session_csrf),
+    ],
+    session: DatabaseSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    payload = await _parse_password_change_request(request)
+    if payload.new_password != payload.confirm_new_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="New passwords do not match.",
+        )
+    try:
+        validate_password(payload.new_password)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from None
+
+    client_ip = _client_ip(request)
+    account_key = authenticated.user.email
+    with login_failure_limiter.lock:
+        if login_failure_limiter.is_limited(client_ip, account_key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many password change attempts. Try again later.",
+            )
+        try:
+            await run_in_threadpool(
+                change_password_for_user,
+                session,
+                authenticated.user.id,
+                payload.current_password,
+                payload.new_password,
+            )
+        except IncorrectCurrentPasswordError:
+            login_failure_limiter.record_failure(client_ip, account_key)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect.",
+            ) from None
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(error),
+            ) from None
+        except (AccountNotFoundError, UnsupportedAuthDatabaseError, SQLAlchemyError):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable.",
+            ) from None
+        login_failure_limiter.clear_account(client_ip, account_key)
+
     clear_session_cookie(request, response, settings)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

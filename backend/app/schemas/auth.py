@@ -10,6 +10,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class PasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str
+    new_password: str
+    confirm_new_password: str
+
+
 class PreAuthChallengeResponse(BaseModel):
     csrf_token: str
 

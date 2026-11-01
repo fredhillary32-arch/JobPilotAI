@@ -26,6 +26,7 @@ import type {
   WorkspaceData,
 } from "./api/types";
 import {
+  AccountView,
   DashboardView,
   DocumentsView,
   DraftsView,
@@ -43,6 +44,7 @@ import { EligibilityDetailsPanel } from "./EligibilityDetailsPanel";
 
 const navigation: { name: ViewName; label: string; icon: string }[] = [
   { name: "Dashboard", label: "Overview", icon: "⌂" },
+  { name: "Account", label: "Account", icon: "◉" },
   { name: "Profile", label: "Candidate profile", icon: "◎" },
   { name: "Documents", label: "Documents", icon: "▤" },
   { name: "Evidence review", label: "Evidence review", icon: "✓" },
@@ -69,6 +71,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<"restoring" | "authenticated" | "anonymous" | "error">("restoring");
   const [authEmail, setAuthEmail] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [workspaceLoad, setWorkspaceLoad] = useState<WorkspaceLoadState>({ status: "idle" });
   const [activeView, setActiveView] = useState<ViewName>("Dashboard");
   // Job preselected on the Tailored CVs page after importing a listing.
@@ -162,6 +165,7 @@ export default function App() {
 
   async function login(email: string, password: string) {
     setAuthError("");
+    setAuthNotice("");
     try {
       const session = await api.login(email, password);
       setAuthEmail(session.user.email);
@@ -190,6 +194,21 @@ export default function App() {
       setWorkspaceLoad({ status: "idle" });
       setAuthEmail("");
     }
+  }
+
+  async function changePassword(payload: {
+    current_password: string;
+    new_password: string;
+    confirm_new_password: string;
+  }) {
+    await api.changePassword(payload);
+    clearSessionCsrfToken();
+    window.localStorage.removeItem("jobpilot.profileId");
+    setProfileId("");
+    setWorkspaceLoad({ status: "idle" });
+    setAuthEmail("");
+    setAuthNotice("Your password has been updated. Sign in with your new password.");
+    setAuthStatus("anonymous");
   }
 
   function selectProfile(id: string) {
@@ -396,7 +415,7 @@ export default function App() {
     return <main className="loading-screen"><section className="auth-error panel"><h1>Could not restore your session</h1><p role="alert">{authError}</p><button className="button button-primary" onClick={() => void restoreSession()}>Try again</button></section></main>;
   }
   if (authStatus === "anonymous") {
-    return <LoginScreen onLogin={login} error={authError} />;
+    return <LoginScreen onLogin={login} error={authError} notice={authNotice} />;
   }
   if (loading) {
     return <main className="loading-screen"><div className="spinner" aria-hidden="true" /><p role="status">Connecting to your local JobPilot workspace…</p></main>;
@@ -407,6 +426,8 @@ export default function App() {
 
   const view = (() => {
     switch (activeView) {
+      case "Account":
+        return <AccountView onChangePassword={changePassword} />;
       case "Profile":
         return <div className="view-stack"><ProfileView
           data={data}
@@ -481,9 +502,10 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin, error }: {
+function LoginScreen({ onLogin, error, notice }: {
   onLogin: (email: string, password: string) => Promise<void>;
   error: string;
+  notice: string;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -514,6 +536,7 @@ function LoginScreen({ onLogin, error }: {
       <h1>Sign in to JobPilot</h1>
       <p className="setup-intro">Use your local owner account to access your candidate workspace.</p>
       {(formError || error) && <p className="feedback-error setup-error" role="alert">{formError || error}</p>}
+      {notice && <p className="feedback-success setup-success" role="status">{notice}</p>}
       <form onSubmit={(event) => void submit(event)} className="setup-form">
         <Field label="Email address" required>
           <input autoComplete="username" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} />

@@ -95,6 +95,7 @@ let sessionCsrf = "session-csrf-test";
 let jobListings: Array<Record<string, unknown>> = [];
 let discoveryRuns: Array<Record<string, unknown>> = [];
 let failJobListings = false;
+let failPasswordChange = false;
 let importedJobs: Array<Record<string, unknown>> = [];
 let jobSources: Array<Record<string, unknown>> = [];
 let confirmations: Array<Record<string, unknown>> = [];
@@ -372,6 +373,11 @@ function responseFor(url: string, init: RequestInit = {}): Response {
     }
     sessionValid = true;
     return jsonResponse({ user: { id: "user-123", email: "owner@example.test" }, csrf_token: "session-csrf-test" });
+  }
+  if (path === "/api/v1/auth/change-password" && method === "POST") {
+    if (failPasswordChange) return jsonResponse({ detail: "Current password is incorrect." }, 400);
+    sessionValid = false;
+    return new Response(null, { status: 204 });
   }
   if (path === "/api/v1/auth/logout" && method === "POST") {
     sessionValid = false;
@@ -727,6 +733,7 @@ describe("JobPilot frontend", () => {
     };
     requests = [];
     failJobSave = false;
+    failPasswordChange = false;
     failProfileRecordSave = false;
     sessionValid = true;
     failSessionRestore = false;
@@ -772,6 +779,54 @@ describe("JobPilot frontend", () => {
     expect(totals.getByText("Saved roles")).toBeInTheDocument();
     expect(screen.getByText("Local workspace")).toBeInTheDocument();
     expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
+  });
+
+  it("validates matching passwords, sends the CSRF protected change, and signs out", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    await user.click(screen.getByRole("button", { name: "Account" }));
+    expect(await screen.findByRole("heading", { name: "Change password" })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^Current password/), "correct horse");
+    await user.type(screen.getByLabelText(/^New password/), "a new secure password");
+    await user.type(screen.getByLabelText(/^Confirm new password/), "a different secure password");
+    await user.click(screen.getByRole("button", { name: "Update password" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("New passwords do not match.");
+    expect(requests.some((request) => request.path.endsWith("/auth/change-password"))).toBe(false);
+
+    await user.clear(screen.getByLabelText(/^Confirm new password/));
+    await user.type(screen.getByLabelText(/^Confirm new password/), "a new secure password");
+    await user.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Your password has been updated. Sign in with your new password.");
+    const request = requests.find((entry) => entry.path.endsWith("/auth/change-password"));
+    expect(request?.headers.get("X-CSRF-Token")).toBe("session-csrf-test");
+    expect(JSON.parse(request?.body || "{}")).toEqual({
+      current_password: "correct horse",
+      new_password: "a new secure password",
+      confirm_new_password: "a new secure password",
+    });
+    expect(window.localStorage.getItem("jobpilot.profileId")).toBeNull();
+  });
+
+  it("clears password fields after the server rejects the current password", async () => {
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Good to see you, Taylor" });
+    await user.click(screen.getByRole("button", { name: "Account" }));
+    await user.type(screen.getByLabelText(/^Current password/), "wrong current password");
+    await user.type(screen.getByLabelText(/^New password/), "a new secure password");
+    await user.type(screen.getByLabelText(/^Confirm new password/), "a new secure password");
+    failPasswordChange = true;
+
+    await user.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Current password is incorrect.");
+    expect(screen.getByLabelText(/^Current password/)).toHaveValue("");
+    expect(screen.getByLabelText(/^New password/)).toHaveValue("");
+    expect(screen.getByLabelText(/^Confirm new password/)).toHaveValue("");
   });
 
   it("restores the session before requesting private workspace data", async () => {

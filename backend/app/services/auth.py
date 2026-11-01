@@ -48,6 +48,10 @@ class ProfilesAlreadyAssignedError(RuntimeError):
     pass
 
 
+class IncorrectCurrentPasswordError(RuntimeError):
+    pass
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -182,6 +186,42 @@ def reset_password(session: Session, email: str, password: str) -> None:
             raise AccountNotFoundError("The requested account does not exist.")
 
         user.password_hash = password_hash
+        session.execute(
+            update(AuthSession)
+            .where(
+                AuthSession.user_id == user.id,
+                AuthSession.revoked_at.is_(None),
+            )
+            .values(revoked_at=utc_now())
+        )
+
+
+def change_password(
+    session: Session,
+    user_id: UUID,
+    current_password: str,
+    new_password: str,
+) -> None:
+    """Update one authenticated user's password and revoke all their sessions."""
+    validate_password(new_password)
+    if current_password == new_password:
+        raise ValueError("Choose a new password that differs from your current password.")
+    new_hash = hash_password(new_password)
+
+    with session.begin():
+        dialect_name = session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            session.execute(text("BEGIN IMMEDIATE"))
+        elif dialect_name != "postgresql":
+            raise UnsupportedAuthDatabaseError("Password change does not support this database engine.")
+
+        user = session.scalar(select(User).where(User.id == user_id).with_for_update())
+        if user is None or not user.is_active:
+            raise AccountNotFoundError("The authenticated account is unavailable.")
+        if not verify_password(current_password, user.password_hash):
+            raise IncorrectCurrentPasswordError("The current password is incorrect.")
+
+        user.password_hash = new_hash
         session.execute(
             update(AuthSession)
             .where(

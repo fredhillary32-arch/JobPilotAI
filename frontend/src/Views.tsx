@@ -29,6 +29,7 @@ import { JobFitPanel } from "./JobFitPanel";
 
 export type ViewName =
   | "Dashboard"
+  | "Account"
   | "Profile"
   | "Documents"
   | "Evidence review"
@@ -44,6 +45,111 @@ type RunAction = (
   success?: string | ((result: unknown) => string),
   pending?: string,
 ) => Promise<boolean>;
+
+export function AccountView({ onChangePassword }: {
+  onChangePassword: (payload: {
+    current_password: string;
+    new_password: string;
+    confirm_new_password: string;
+  }) => Promise<void>;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setError("Enter your current password and both new password fields.");
+      return;
+    }
+    const passwordLength = Array.from(newPassword).length;
+    if (passwordLength < 15 || passwordLength > 128) {
+      setError("New password must be between 15 and 128 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setError("Choose a new password that differs from your current password.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onChangePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_new_password: confirmNewPassword,
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } catch (changeError) {
+      setError(changeError instanceof Error ? changeError.message : "Password change failed. Try again.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const passwordField = (
+    key: string,
+    label: string,
+    value: string,
+    setValue: (value: string) => void,
+    autocomplete: "current-password" | "new-password",
+  ) => <div className="field" key={key}>
+    <label htmlFor={`password-${key}`}>{label}<span className="required-mark" aria-hidden="true"> *</span></label>
+    <span className="password-input-wrap">
+      <input
+        autoComplete={autocomplete}
+        id={`password-${key}`}
+        name={key}
+        required
+        type={visible[key] ? "text" : "password"}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <button
+        aria-label={`${visible[key] ? "Hide" : "Show"} ${label.toLowerCase()}`}
+        className="password-visibility"
+        onClick={() => setVisible((current) => ({ ...current, [key]: !current[key] }))}
+        type="button"
+      >{visible[key] ? "Hide" : "Show"}</button>
+    </span>
+  </div>;
+
+  return <div className="view-stack">
+    <PageHeading eyebrow="Account security" title="Change password" description="Update the password you use to sign in to JobPilot AI." />
+    <section className="panel password-panel" aria-labelledby="password-form-title">
+      <div className="section-title">
+        <div><p className="eyebrow">Password</p><h2 id="password-form-title">Choose a new sign-in password</h2></div>
+      </div>
+      <form className="password-form" noValidate onSubmit={(event) => void submit(event)}>
+        {passwordField("current", "Current password", currentPassword, setCurrentPassword, "current-password")}
+        {passwordField("new", "New password", newPassword, setNewPassword, "new-password")}
+        <p className="password-hint">Use 15–128 characters. Your new password must differ from your current password.</p>
+        {passwordField("confirm", "Confirm new password", confirmNewPassword, setConfirmNewPassword, "new-password")}
+        {error && <p className="password-error" role="alert">{error}</p>}
+        <div className="password-form-footer">
+          <p className="muted">After you update it, you’ll sign in again with the new password.</p>
+          <button className="button button-primary" disabled={submitting} type="submit">
+            {submitting ? "Updating password…" : "Update password"}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>;
+}
 
 const categories: EvidenceCategory[] = [
   "employment_responsibility",

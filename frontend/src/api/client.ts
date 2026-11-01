@@ -234,6 +234,14 @@ export const api = {
       clearSessionCsrfToken();
     }
   },
+  async changePassword(payload: {
+    current_password: string;
+    new_password: string;
+    confirm_new_password: string;
+  }): Promise<void> {
+    await request<void>("/auth/change-password", json("POST", payload));
+    clearSessionCsrfToken();
+  },
   listProfiles: () => request<CandidateProfile[]>("/candidate-profiles"),
   listJobListings: (options: JobListingFilters = {}) => {
     const query = new URLSearchParams();

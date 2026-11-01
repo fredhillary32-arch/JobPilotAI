@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.main import app
 from app.models.user import AuthSession, PreAuthChallenge, User
-from app.services.auth import hash_password, hash_token
+from app.services.auth import hash_password, hash_token, verify_password
 from app.services.login_limiter import login_failure_limiter
 from app.settings import Settings, get_settings
 
@@ -17,6 +17,7 @@ PRE_AUTH_URL = "/api/v1/auth/pre-auth-csrf"
 LOGIN_URL = "/api/v1/auth/login"
 SESSION_URL = "/api/v1/auth/session"
 LOGOUT_URL = "/api/v1/auth/logout"
+CHANGE_PASSWORD_URL = "/api/v1/auth/change-password"
 
 
 @pytest.fixture
@@ -89,6 +90,25 @@ def _login(
     )
 
 
+def _change_password(
+    client: TestClient,
+    csrf_token: str,
+    *,
+    current_password: str,
+    new_password: str,
+    confirm_new_password: str | None = None,
+):
+    return client.post(
+        CHANGE_PASSWORD_URL,
+        headers={"Origin": ORIGIN, "X-CSRF-Token": csrf_token},
+        json={
+            "current_password": current_password,
+            "new_password": new_password,
+            "confirm_new_password": new_password if confirm_new_password is None else confirm_new_password,
+        },
+    )
+
+
 def test_login_sets_secure_session_and_returns_minimal_identity(auth_client) -> None:
     client, factory = auth_client
     password = _create_user(factory)
@@ -118,6 +138,158 @@ def test_login_sets_secure_session_and_returns_minimal_identity(auth_client) -> 
         assert raw_cookie not in auth_session.token_hash
         assert auth_session.idle_expires_at - auth_session.created_at == timedelta(hours=12)
         assert auth_session.absolute_expires_at - auth_session.created_at == timedelta(days=7)
+
+
+def test_authenticated_user_changes_password_and_revokes_sessions(auth_client) -> None:
+    client, factory = auth_client
+    old_password = _create_user(factory)
+    login = _login(client, "owner@example.com", old_password)
+    csrf_token = login.json()["csrf_token"]
+
+    response = _change_password(
+        client,
+        csrf_token,
+        current_password=old_password,
+        new_password="a new secure password",
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert "jobpilot_session=" in response.headers.get("set-cookie", "")
+    assert "max-age=0" in response.headers.get("set-cookie", "").lower()
+    with factory() as session:
+        user = session.scalar(select(User).where(User.email == "owner@example.com"))
+        assert user is not None
+        assert user.password_hash.startswith("$argon2id$")
+        assert user.password_hash != "a new secure password"
+        assert "a new secure password" not in user.password_hash
+        assert not verify_password(old_password, user.password_hash)
+        assert verify_password("a new secure password", user.password_hash)
+        assert all(item.revoked_at is not None for item in session.scalars(select(AuthSession)))
+
+    assert client.get(SESSION_URL).status_code == 401
+    assert _login(client, "owner@example.com", old_password).status_code == 401
+    assert _login(client, "owner@example.com", "a new secure password").status_code == 200
+
+
+def test_password_change_rejects_wrong_current_password_without_mutation(auth_client) -> None:
+    client, factory = auth_client
+    old_password = _create_user(factory)
+    login = _login(client, "owner@example.com", old_password)
+    csrf_token = login.json()["csrf_token"]
+
+    response = _change_password(
+        client,
+        csrf_token,
+        current_password="incorrect current password",
+        new_password="a new secure password",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Current password is incorrect."}
+    with factory() as session:
+        user = session.scalar(select(User).where(User.email == "owner@example.com"))
+        assert user is not None and verify_password(old_password, user.password_hash)
+        auth_session = session.scalar(select(AuthSession))
+        assert auth_session is not None and auth_session.revoked_at is None
+
+
+@pytest.mark.parametrize(
+    ("new_password", "confirm_new_password"),
+    [("short", "short"), ("a new secure password", "a different secure password")],
+)
+def test_password_change_rejects_invalid_or_mismatched_new_password(
+    auth_client,
+    new_password: str,
+    confirm_new_password: str,
+) -> None:
+    client, factory = auth_client
+    old_password = _create_user(factory)
+    login = _login(client, "owner@example.com", old_password)
+
+    response = _change_password(
+        client,
+        login.json()["csrf_token"],
+        current_password=old_password,
+        new_password=new_password,
+        confirm_new_password=confirm_new_password,
+    )
+
+    assert response.status_code == 422
+    with factory() as session:
+        user = session.scalar(select(User).where(User.email == "owner@example.com"))
+        assert user is not None and verify_password(old_password, user.password_hash)
+        auth_session = session.scalar(select(AuthSession))
+        assert auth_session is not None and auth_session.revoked_at is None
+
+
+def test_password_change_requires_authentication_and_session_csrf(auth_client) -> None:
+    client, _ = auth_client
+    anonymous = client.post(
+        CHANGE_PASSWORD_URL,
+        headers={"Origin": ORIGIN},
+        json={
+            "current_password": "a secure current password",
+            "new_password": "a secure new password",
+            "confirm_new_password": "a secure new password",
+        },
+    )
+    assert anonymous.status_code == 401
+
+    old_password = _create_user(auth_client[1])
+    _login(client, "owner@example.com", old_password)
+    missing_csrf = client.post(
+        CHANGE_PASSWORD_URL,
+        headers={"Origin": ORIGIN},
+        json={
+            "current_password": old_password,
+            "new_password": "a secure new password",
+            "confirm_new_password": "a secure new password",
+        },
+    )
+    assert missing_csrf.status_code == 403
+
+
+def test_password_change_rate_limits_incorrect_current_password(auth_client) -> None:
+    client, factory = auth_client
+    old_password = _create_user(factory)
+    login = _login(client, "owner@example.com", old_password)
+    csrf_token = login.json()["csrf_token"]
+
+    responses = [
+        _change_password(
+            client,
+            csrf_token,
+            current_password="incorrect current password",
+            new_password="a new secure password",
+        )
+        for _ in range(6)
+    ]
+
+    assert [response.status_code for response in responses] == [400, 400, 400, 400, 400, 429]
+
+
+def test_password_change_rejects_untrusted_user_id_without_echoing_passwords(auth_client) -> None:
+    client, factory = auth_client
+    old_password = _create_user(factory)
+    login = _login(client, "owner@example.com", old_password)
+    secret = "a newly submitted private password"
+    response = client.post(
+        CHANGE_PASSWORD_URL,
+        headers={"Origin": ORIGIN, "X-CSRF-Token": login.json()["csrf_token"]},
+        json={
+            "user_id": "00000000-0000-0000-0000-000000000002",
+            "current_password": old_password,
+            "new_password": secret,
+            "confirm_new_password": secret,
+        },
+    )
+
+    assert response.status_code == 400
+    assert secret not in response.text
+    with factory() as session:
+        user = session.scalar(select(User).where(User.email == "owner@example.com"))
+        assert user is not None and verify_password(old_password, user.password_hash)
 
 
 def test_https_mode_sets_secure_pre_auth_cookie(auth_client) -> None:
