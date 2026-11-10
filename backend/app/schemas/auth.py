@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
@@ -16,6 +16,24 @@ class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
     confirm_new_password: str
+
+
+class PasswordResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(max_length=254)
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=30, max_length=128)
+    new_password: str
+    confirm_new_password: str
+
+
+class PasswordResetRequestResponse(BaseModel):
+    message: str
 
 
 class PreAuthChallengeResponse(BaseModel):

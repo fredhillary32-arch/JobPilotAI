@@ -170,15 +170,13 @@ freshly restored and migrated copy of the configured database; the real
 account was not signed in to (see the handoff for the steps and limits).
 
 **The configured database must be at the repository head before the full app
-can run.** The latest migration is `d8b4f6a2c9e1` (source verification and link
-checks). With approval, the configured `jobpilot` database was migrated from
-`a17c3e5b9d24` to `d8b4f6a2c9e1` on 2026-10-17 after a fresh verified backup and
-restore rehearsal; existing rows and documents were unchanged and `/readyz`
-returned HTTP 200. The ATS and CV-review work added no migration. A database
-below the head makes `/readyz` return 503. Follow the backup,
-restore-verification, and migration runbook in
+can run. The latest migration is `f1a2c3d4e5b6` (one-time password reset
+tokens). The previously recorded verification migrated the configured
+`jobpilot` database to `d8b4f6a2c9e1` on 2026-10-17; that historical check does
+not establish the current production database revision. Check `/readyz` and
+follow the backup, restore-verification, and migration runbook in
 [docs/PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md) before any future
-migration.
+migration. A database below the repository head makes `/readyz` return 503.
 
 ## Database migrations
 
@@ -651,6 +649,14 @@ Set these backend-only environment variables in Render:
 - `AUTH_ALLOWED_ORIGIN=https://app.example.com`: the exact Vercel custom
   frontend origin, with no trailing slash.
 - `AUTH_COOKIE_SAMESITE=strict` and `AUTH_LOCAL_HTTP=false`.
+- For login-page password recovery, set `PASSWORD_RESET_SMTP_HOST`,
+  `PASSWORD_RESET_SMTP_USERNAME`, `PASSWORD_RESET_SMTP_PASSWORD`, and
+  `PASSWORD_RESET_SENDER_EMAIL` on the backend service. The SMTP port defaults
+  to 587 with STARTTLS; set `PASSWORD_RESET_SMTP_PORT`,
+  `PASSWORD_RESET_SMTP_STARTTLS`, or `PASSWORD_RESET_SMTP_USE_SSL` when the
+  provider requires different transport settings. Keep mail credentials on the
+  backend only. Until all required mail settings are configured, recovery
+  requests return an unavailable response and no reset email is sent.
 - `DOCUMENT_STORAGE_PATH=/var/data/documents`: place this directory on a
   private persistent disk mounted at `/var/data`. Without persistent storage,
   uploaded documents may be lost when the service restarts or redeploys.

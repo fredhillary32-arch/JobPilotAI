@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.cli import main
-from app.models.user import AuthSession, User
+from app.models.user import AuthSession, PasswordResetToken, User
 from app.services.auth import hash_password, hash_token, verify_password
 
 
@@ -76,6 +76,40 @@ def test_local_password_reset_changes_hash_and_revokes_all_sessions(
         stored_sessions = session.scalars(select(AuthSession)).all()
         assert len(stored_sessions) == 2
         assert all(auth_session.revoked_at is not None for auth_session in stored_sessions)
+
+
+def test_local_password_reset_invalidates_email_recovery_links(database, capsys) -> None:
+    _, factory = database
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        user = User(
+            email="owner@example.com",
+            password_hash=hash_password("previous secure password"),
+        )
+        session.add(user)
+        session.flush()
+        session.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=hash_token("outstanding-reset-token"),
+                created_at=now,
+                expires_at=now + timedelta(minutes=30),
+            )
+        )
+
+    result, _ = _run_reset(
+        factory,
+        "owner@example.com",
+        "owner@example.com",
+        "new secure password with spaces",
+        "new secure password with spaces",
+        capsys,
+    )
+
+    assert result == 0
+    with factory() as session:
+        reset_token = session.scalar(select(PasswordResetToken))
+        assert reset_token is not None and reset_token.consumed_at is not None
 
 
 def test_local_password_reset_requires_explicit_account_confirmation(

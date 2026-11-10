@@ -227,6 +227,8 @@ def test_anonymous_requests_are_rejected_for_each_resource_family(
 PUBLIC_API_ROUTES = {
     ("GET", "/api/v1/auth/pre-auth-csrf"),
     ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/password-reset/request"),
+    ("POST", "/api/v1/auth/password-reset/confirm"),
 }
 
 

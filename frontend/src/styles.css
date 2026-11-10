@@ -447,6 +447,7 @@ td:first-child { color: #3d4d45; font-weight: 600; }
 .setup-success { margin-bottom: 13px; padding: 10px; border: 1px solid #cce3d6; border-radius: 7px; background: #eff8f2; color: #246648; font-size: 11px; line-height: 1.5; }
 .auth-error { width: min(100% - 36px, 460px); text-align: center; }
 .auth-error p { color: var(--muted); line-height: 1.6; }
+.login-card .setup-form + .button-secondary { margin-top: 9px; }
 .login-card .setup-warning { background: #f1f6f3; color: #64756d; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 

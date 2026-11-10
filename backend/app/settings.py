@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import EmailStr, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -29,6 +29,33 @@ class Settings(BaseSettings):
     )
     auth_local_http: bool = Field(default=False, validation_alias="AUTH_LOCAL_HTTP")
     auth_cookie_samesite: str = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
+    password_reset_smtp_host: str | None = Field(default=None, validation_alias="PASSWORD_RESET_SMTP_HOST")
+    password_reset_smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        validation_alias="PASSWORD_RESET_SMTP_PORT",
+    )
+    password_reset_smtp_username: str | None = Field(
+        default=None,
+        validation_alias="PASSWORD_RESET_SMTP_USERNAME",
+    )
+    password_reset_smtp_password: SecretStr | None = Field(
+        default=None,
+        validation_alias="PASSWORD_RESET_SMTP_PASSWORD",
+    )
+    password_reset_sender_email: EmailStr | None = Field(
+        default=None,
+        validation_alias="PASSWORD_RESET_SENDER_EMAIL",
+    )
+    password_reset_smtp_starttls: bool = Field(
+        default=True,
+        validation_alias="PASSWORD_RESET_SMTP_STARTTLS",
+    )
+    password_reset_smtp_use_ssl: bool = Field(
+        default=False,
+        validation_alias="PASSWORD_RESET_SMTP_USE_SSL",
+    )
     document_storage_path: Path = Field(
         default=PROJECT_ROOT / "var" / "documents",
         validation_alias="DOCUMENT_STORAGE_PATH",
@@ -49,6 +76,36 @@ class Settings(BaseSettings):
         if self.auth_local_http and self.auth_allowed_origin != "http://127.0.0.1:5173":
             raise ValueError("Local HTTP authentication requires the approved loopback browser origin.")
         return self
+
+    @model_validator(mode="after")
+    def validate_password_reset_email_settings(self) -> "Settings":
+        required = (
+            self.password_reset_smtp_host,
+            self.password_reset_smtp_username,
+            self.password_reset_smtp_password,
+            self.password_reset_sender_email,
+        )
+        if any(value is not None for value in required) and not all(value is not None for value in required):
+            raise ValueError("Configure all password-reset SMTP host, username, password, and sender settings.")
+        if self.password_reset_smtp_use_ssl and self.password_reset_smtp_starttls:
+            raise ValueError("Choose either password-reset SMTP SSL or STARTTLS, not both.")
+        if self.password_reset_email_configured and not (
+            self.password_reset_smtp_use_ssl or self.password_reset_smtp_starttls
+        ):
+            raise ValueError("Password-reset SMTP must use SSL or STARTTLS.")
+        return self
+
+    @property
+    def password_reset_email_configured(self) -> bool:
+        return all(
+            value is not None
+            for value in (
+                self.password_reset_smtp_host,
+                self.password_reset_smtp_username,
+                self.password_reset_smtp_password,
+                self.password_reset_sender_email,
+            )
+        )
 
     @property
     def database_url(self) -> URL:

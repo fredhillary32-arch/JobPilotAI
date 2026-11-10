@@ -23,6 +23,7 @@ from app.models.job_listing import JobDiscoveryRun, JobListing, JobListingLinkCh
 from app.models.skill_confirmation import CandidateSkillConfirmation
 from app.models.user import (
     AuthSession,
+    PasswordResetToken,
     PreAuthChallenge,
     ProfileOwnershipAdoption,
     User,
@@ -46,6 +47,7 @@ __all__ = [
     "JobListing",
     "JobListingLinkCheck",
     "AuthSession",
+    "PasswordResetToken",
     "PreAuthChallenge",
     "ProfileOwnershipAdoption",
     "User",

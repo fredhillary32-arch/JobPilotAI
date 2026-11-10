@@ -1,9 +1,10 @@
 import json
 import secrets
-from typing import Annotated
+from typing import Annotated, TypeVar
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import ValidationError
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -23,6 +24,9 @@ from app.schemas.auth import (
     AuthenticatedUserResponse,
     LoginRequest,
     PasswordChangeRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    PasswordResetRequestResponse,
     PreAuthChallengeResponse,
     SessionResponse,
 )
@@ -31,9 +35,10 @@ from app.services.auth import (
     AccountNotFoundError,
     IncorrectCurrentPasswordError,
     UnsupportedAuthDatabaseError,
-    change_password as change_password_for_user,
+    complete_password_reset,
     consume_pre_auth_challenge,
     create_auth_session,
+    create_password_reset_token,
     hash_token,
     normalize_database_datetime,
     normalize_login_email,
@@ -41,7 +46,12 @@ from app.services.auth import (
     validate_password,
     verify_login_password,
 )
+from app.services.auth import (
+    change_password as change_password_for_user,
+)
 from app.services.login_limiter import login_failure_limiter
+from app.services.password_reset_email import send_password_reset_email
+from app.services.password_reset_limiter import password_reset_limiter
 from app.settings import Settings, get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -49,7 +59,9 @@ PRE_AUTH_COOKIE_NAME = "jobpilot_pre_auth"
 CSRF_HEADER_NAME = "x-csrf-token"
 MAX_LOGIN_BODY_BYTES = 8192
 MAX_PASSWORD_CHANGE_BODY_BYTES = 8192
+MAX_PASSWORD_RESET_BODY_BYTES = 8192
 GENERIC_LOGIN_ERROR = "Invalid email or password."
+AuthRequestT = TypeVar("AuthRequestT", bound=BaseModel)
 
 
 def _set_cookie(
@@ -152,6 +164,84 @@ async def _parse_password_change_request(request: Request) -> PasswordChangeRequ
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid password change request.",
         ) from None
+
+
+async def _parse_password_reset_request(request: Request) -> PasswordResetRequest:
+    return await _parse_auth_request(request, PasswordResetRequest, "password reset")
+
+
+async def _parse_password_reset_confirm_request(request: Request) -> PasswordResetConfirmRequest:
+    return await _parse_auth_request(request, PasswordResetConfirmRequest, "password reset")
+
+
+async def _parse_auth_request(
+    request: Request,
+    model: type[AuthRequestT],
+    label: str,
+) -> AuthRequestT:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_PASSWORD_RESET_BODY_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"{label.capitalize()} request is too large.",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid {label} request.",
+            ) from None
+
+    body = await request.body()
+    if len(body) > MAX_PASSWORD_RESET_BODY_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"{label.capitalize()} request is too large.",
+        )
+    try:
+        return model.model_validate(json.loads(body))
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {label} request.",
+        ) from None
+
+
+def _consume_pre_auth_challenge(
+    request: Request,
+    response: Response,
+    session: Session,
+    settings: Settings,
+) -> None:
+    require_allowed_origin(request, settings)
+    _clear_pre_auth_cookie(request, response, settings)
+    try:
+        challenge_valid = consume_pre_auth_challenge(
+            session,
+            request.headers.get(CSRF_HEADER_NAME),
+            request.cookies.get(PRE_AUTH_COOKIE_NAME),
+        )
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable.",
+        ) from None
+    if not challenge_valid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Request verification failed.",
+        )
+
+
+def _record_password_reset_attempt(client_ip: str) -> None:
+    with password_reset_limiter.lock:
+        if password_reset_limiter.is_limited(client_ip):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many password recovery requests. Try again later.",
+            )
+        password_reset_limiter.record_request(client_ip)
 
 
 def _session_response(user: User, csrf_token: str) -> SessionResponse:
@@ -287,25 +377,7 @@ async def login(
 ) -> SessionResponse:
     require_allowed_origin(request, settings)
     login_request = await _parse_login_request(request)
-    _clear_pre_auth_cookie(request, response, settings)
-
-    try:
-        challenge_valid = consume_pre_auth_challenge(
-            session,
-            request.headers.get(CSRF_HEADER_NAME),
-            request.cookies.get(PRE_AUTH_COOKIE_NAME),
-        )
-    except SQLAlchemyError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service unavailable.",
-        ) from None
-
-    if not challenge_valid:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Request verification failed.",
-        )
+    _consume_pre_auth_challenge(request, response, session, settings)
 
     user, raw_session_token, csrf_token, max_age = await run_in_threadpool(
         _authenticate_and_create_session,
@@ -323,6 +395,91 @@ async def login(
         settings=settings,
     )
     return _session_response(user, csrf_token)
+
+
+@router.post(
+    "/password-reset/request",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PasswordResetRequestResponse,
+)
+async def request_password_reset(
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    session: DatabaseSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PasswordResetRequestResponse:
+    _consume_pre_auth_challenge(request, response, session, settings)
+    payload = await _parse_password_reset_request(request)
+
+    _record_password_reset_attempt(_client_ip(request))
+
+    if not settings.password_reset_email_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Password recovery is not configured.",
+        )
+
+    try:
+        reset = await run_in_threadpool(create_password_reset_token, session, payload.email)
+    except (UnsupportedAuthDatabaseError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable.",
+        ) from None
+
+    if reset is not None:
+        account_email, raw_token = reset
+        reset_url = f"{settings.auth_allowed_origin.rstrip('/')}/#reset={quote(raw_token, safe='')}"
+        background_tasks.add_task(send_password_reset_email, settings, account_email, reset_url)
+
+    return PasswordResetRequestResponse(
+        message="If an account exists for this address, a password reset email will be sent."
+    )
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_password_reset(
+    request: Request,
+    response: Response,
+    session: DatabaseSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    _consume_pre_auth_challenge(request, response, session, settings)
+    _record_password_reset_attempt(_client_ip(request))
+    payload = await _parse_password_reset_confirm_request(request)
+    if payload.new_password != payload.confirm_new_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="New passwords do not match.",
+        )
+    try:
+        reset_succeeded = await run_in_threadpool(
+            complete_password_reset,
+            session,
+            payload.token,
+            payload.new_password,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from None
+    except (UnsupportedAuthDatabaseError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable.",
+        ) from None
+
+    if not reset_succeeded:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or expired.",
+        )
+
+    clear_session_cookie(request, response, settings)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.get("/session", response_model=SessionResponse)

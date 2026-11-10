@@ -367,6 +367,12 @@ function responseFor(url: string, init: RequestInit = {}): Response {
   if (path === "/api/v1/auth/pre-auth-csrf" && method === "GET") {
     return jsonResponse({ csrf_token: "pre-auth-csrf-test" });
   }
+  if (path === "/api/v1/auth/password-reset/request" && method === "POST") {
+    return jsonResponse({ message: "If the account exists, a reset email will be sent." }, 202);
+  }
+  if (path === "/api/v1/auth/password-reset/confirm" && method === "POST") {
+    return new Response(null, { status: 204 });
+  }
   if (path === "/api/v1/auth/login" && method === "POST") {
     if (JSON.parse(body || "{}").password !== "correct horse") {
       return jsonResponse({ detail: "Invalid credentials." }, 401);
@@ -690,6 +696,7 @@ describe("JobPilot frontend", () => {
   });
 
   beforeEach(() => {
+    window.history.replaceState(null, "", window.location.pathname);
     evidenceStatus = "unreviewed";
     currentProfile = profile;
     exports = [];
@@ -868,6 +875,44 @@ describe("JobPilot frontend", () => {
     expect(requests[loginIndex].mode).toBe("cors");
     expect(requests.some((request) => request.path.endsWith("/candidate-profiles/profile-123"))).toBe(true);
     expect(window.localStorage.getItem("jobpilot.profileId")).toBe(profileId);
+  });
+
+  it("requests a recovery email from the main login page with pre-auth CSRF", async () => {
+    sessionValid = false;
+    const user = userEvent.setup();
+    mountApp();
+    await screen.findByRole("heading", { name: "Sign in to JobPilot" });
+    await user.click(screen.getByRole("button", { name: "Forgot password?" }));
+    await user.type(screen.getByLabelText(/^Email address/), "owner@example.test");
+    await user.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("If an account exists");
+    const request = requests.find((entry) => entry.path.endsWith("/auth/password-reset/request"));
+    expect(request?.headers.get("X-CSRF-Token")).toBe("pre-auth-csrf-test");
+    expect(JSON.parse(request?.body || "{}")).toEqual({ email: "owner@example.test" });
+  });
+
+  it("opens a reset link, submits a new password, and removes the token from the URL", async () => {
+    sessionValid = false;
+    window.location.hash = "#reset=one-time-reset-token";
+    const user = userEvent.setup();
+    mountApp();
+
+    expect(await screen.findByRole("heading", { name: "Set a new password" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^New password/), "a sufficiently long new password");
+    await user.type(screen.getByLabelText(/^Confirm new password/), "a sufficiently long new password");
+    await user.click(screen.getByRole("button", { name: "Reset password" }));
+
+    expect(await screen.findByRole("heading", { name: "Sign in to JobPilot" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("");
+    expect(screen.getByRole("status")).toHaveTextContent("Your password has been reset");
+    const request = requests.find((entry) => entry.path.endsWith("/auth/password-reset/confirm"));
+    expect(request?.headers.get("X-CSRF-Token")).toBe("pre-auth-csrf-test");
+    expect(JSON.parse(request?.body || "{}")).toEqual({
+      token: "one-time-reset-token",
+      new_password: "a sufficiently long new password",
+      confirm_new_password: "a sufficiently long new password",
+    });
   });
 
   it("lists owned profiles after sign-in so a profile can be reopened without its ID", async () => {

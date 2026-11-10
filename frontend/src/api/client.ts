@@ -134,7 +134,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   const method = (init?.method || "GET").toUpperCase();
   const mutating = !["GET", "HEAD", "OPTIONS"].includes(method);
   const headers = new Headers(init?.headers);
-  if (mutating && sessionCsrfToken) {
+  if (mutating && sessionCsrfToken && !headers.has("X-CSRF-Token")) {
     headers.set("X-CSRF-Token", sessionCsrfToken);
   }
   try {
@@ -168,6 +168,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
       mutating &&
       !retried &&
       path !== "/auth/login" &&
+      !path.startsWith("/auth/password-reset/") &&
       detailMessage(data) === CSRF_VERIFICATION_FAILED
     ) {
       await api.restoreSession();
@@ -226,6 +227,39 @@ export const api = {
     );
     sessionCsrfToken = session.csrf_token;
     return session;
+  },
+  async requestPasswordReset(email: string): Promise<void> {
+    const challenge = await request<{ csrf_token: string }>("/auth/pre-auth-csrf", {
+      method: "GET",
+      credentials: "include",
+      mode: "cors",
+    });
+    await request<void>(
+      "/auth/password-reset/request",
+      {
+        ...json("POST", { email }),
+        headers: { "X-CSRF-Token": challenge.csrf_token },
+      },
+    );
+  },
+  async confirmPasswordReset(payload: {
+    token: string;
+    new_password: string;
+    confirm_new_password: string;
+  }): Promise<void> {
+    const challenge = await request<{ csrf_token: string }>("/auth/pre-auth-csrf", {
+      method: "GET",
+      credentials: "include",
+      mode: "cors",
+    });
+    await request<void>(
+      "/auth/password-reset/confirm",
+      {
+        ...json("POST", payload),
+        headers: { "X-CSRF-Token": challenge.csrf_token },
+      },
+    );
+    clearSessionCsrfToken();
   },
   async logout(): Promise<void> {
     try {

@@ -64,11 +64,18 @@ type WorkspaceLoadState =
   | { status: "loaded"; profileId: string; data: WorkspaceData }
   | { status: "error"; profileId: string; message: string };
 
+function getPasswordResetToken(): string {
+  return new URLSearchParams(window.location.hash.slice(1)).get("reset") || "";
+}
+
 export default function App() {
+  const [resetToken, setResetToken] = useState(getPasswordResetToken);
   const [profileId, setProfileId] = useState(
     "",
   );
-  const [authStatus, setAuthStatus] = useState<"restoring" | "authenticated" | "anonymous" | "error">("restoring");
+  const [authStatus, setAuthStatus] = useState<"restoring" | "authenticated" | "anonymous" | "error">(
+    () => getPasswordResetToken() ? "anonymous" : "restoring",
+  );
   const [authEmail, setAuthEmail] = useState("");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
@@ -92,6 +99,7 @@ export default function App() {
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
+    if (getPasswordResetToken()) return;
     const handleUnauthorized = () => {
       clearSessionCsrfToken();
       window.localStorage.removeItem("jobpilot.profileId");
@@ -208,6 +216,35 @@ export default function App() {
     setWorkspaceLoad({ status: "idle" });
     setAuthEmail("");
     setAuthNotice("Your password has been updated. Sign in with your new password.");
+    setAuthStatus("anonymous");
+  }
+
+  async function requestPasswordReset(email: string) {
+    await api.requestPasswordReset(email);
+  }
+
+  async function confirmPasswordReset(payload: {
+    token: string;
+    new_password: string;
+    confirm_new_password: string;
+  }) {
+    await api.confirmPasswordReset(payload);
+    clearSessionCsrfToken();
+    window.localStorage.removeItem("jobpilot.profileId");
+    window.history.replaceState(null, "", window.location.pathname);
+    setProfileId("");
+    setWorkspaceLoad({ status: "idle" });
+    setAuthEmail("");
+    setAuthError("");
+    setAuthNotice("Your password has been reset. Sign in with your new password.");
+    setResetToken("");
+    setAuthStatus("anonymous");
+  }
+
+  function leavePasswordReset() {
+    window.history.replaceState(null, "", window.location.pathname);
+    setResetToken("");
+    setAuthNotice("");
     setAuthStatus("anonymous");
   }
 
@@ -415,7 +452,15 @@ export default function App() {
     return <main className="loading-screen"><section className="auth-error panel"><h1>Could not restore your session</h1><p role="alert">{authError}</p><button className="button button-primary" onClick={() => void restoreSession()}>Try again</button></section></main>;
   }
   if (authStatus === "anonymous") {
-    return <LoginScreen onLogin={login} error={authError} notice={authNotice} />;
+    if (resetToken) {
+      return <PasswordResetScreen token={resetToken} onReset={confirmPasswordReset} onBack={leavePasswordReset} />;
+    }
+    return <LoginScreen
+      onLogin={login}
+      onRequestPasswordReset={requestPasswordReset}
+      error={authError}
+      notice={authNotice}
+    />;
   }
   if (loading) {
     return <main className="loading-screen"><div className="spinner" aria-hidden="true" /><p role="status">Connecting to your local JobPilot workspace…</p></main>;
@@ -502,8 +547,9 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin, error, notice }: {
+function LoginScreen({ onLogin, onRequestPasswordReset, error, notice }: {
   onLogin: (email: string, password: string) => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
   error: string;
   notice: string;
 }) {
@@ -511,6 +557,8 @@ function LoginScreen({ onLogin, error, notice }: {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -525,6 +573,49 @@ function LoginScreen({ onLogin, error, notice }: {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function requestReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormError("");
+    setRecoveryNotice("");
+    try {
+      await onRequestPasswordReset(email);
+      setRecoveryNotice("If an account exists for this address, a reset email will be sent.");
+    } catch (caught) {
+      setFormError(caught instanceof ApiError && caught.status === 503
+        ? "Password recovery is temporarily unavailable. Please contact the site administrator."
+        : "We couldn’t request a reset email. Please try again later.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (recoveryMode) {
+    return <main className="setup-shell">
+      <section className="setup-card login-card">
+        <a className="brand setup-brand" href="#" onClick={(event) => event.preventDefault()}>
+          <span className="brand-mark">J</span><span>jobpilot<span className="brand-ai">.ai</span><small>CAREER WORKSPACE</small></span>
+        </a>
+        <p className="eyebrow">Account recovery</p>
+        <h1>Forgot your password?</h1>
+        <p className="setup-intro">Enter your account email and we’ll send a one-time reset link if it’s registered.</p>
+        {formError && <p className="feedback-error setup-error" role="alert">{formError}</p>}
+        {recoveryNotice && <p className="feedback-success setup-success" role="status">{recoveryNotice}</p>}
+        <form onSubmit={(event) => void requestReset(event)} className="setup-form">
+          <Field label="Email address" required>
+            <input autoComplete="email" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          </Field>
+          <button className="button button-primary button-wide" disabled={submitting} type="submit">
+            {submitting ? "Sending…" : "Send reset link"}
+          </button>
+        </form>
+        <button className="button button-secondary button-wide" onClick={() => { setRecoveryMode(false); setFormError(""); setRecoveryNotice(""); }} type="button">
+          Back to sign in
+        </button>
+      </section>
+    </main>;
   }
 
   return <main className="setup-shell">
@@ -548,7 +639,78 @@ function LoginScreen({ onLogin, error, notice }: {
           {submitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <button className="button button-secondary button-wide" onClick={() => { setRecoveryMode(true); setFormError(""); }} type="button">
+        Forgot password?
+      </button>
       <p className="setup-warning">Session credentials are held in a secure, HttpOnly cookie. This application does not offer public registration.</p>
+    </section>
+  </main>;
+}
+
+function PasswordResetScreen({ token, onReset, onBack }: {
+  token: string;
+  onReset: (payload: {
+    token: string;
+    new_password: string;
+    confirm_new_password: string;
+  }) => Promise<void>;
+  onBack: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError("");
+    if (newPassword !== confirmPassword) {
+      setFormError("New passwords do not match.");
+      setNewPassword("");
+      setConfirmPassword("");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onReset({
+        token,
+        new_password: newPassword,
+        confirm_new_password: confirmPassword,
+      });
+    } catch (caught) {
+      setFormError(caught instanceof ApiError && caught.status === 400
+        ? "This reset link is invalid or expired. Request a new one."
+        : errorMessage(caught));
+    } finally {
+      setNewPassword("");
+      setConfirmPassword("");
+      setSubmitting(false);
+    }
+  }
+
+  return <main className="setup-shell">
+    <section className="setup-card login-card">
+      <a className="brand setup-brand" href="#" onClick={(event) => event.preventDefault()}>
+        <span className="brand-mark">J</span><span>jobpilot<span className="brand-ai">.ai</span><small>CAREER WORKSPACE</small></span>
+      </a>
+      <p className="eyebrow">Account recovery</p>
+      <h1>Set a new password</h1>
+      <p className="setup-intro">Choose a password between 15 and 128 characters.</p>
+      {formError && <p className="feedback-error setup-error" role="alert">{formError}</p>}
+      <form onSubmit={(event) => void submit(event)} className="setup-form">
+        <Field label="New password" required>
+          <input autoComplete="new-password" maxLength={128} minLength={15} required type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+        </Field>
+        <Field label="Confirm new password" required>
+          <input autoComplete="new-password" maxLength={128} minLength={15} required type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+        </Field>
+        <button className="button button-primary button-wide" disabled={submitting} type="submit">
+          {submitting ? "Updating…" : "Reset password"}
+        </button>
+      </form>
+      <button className="button button-secondary button-wide" onClick={onBack} type="button">
+        Back to sign in
+      </button>
     </section>
   </main>;
 }

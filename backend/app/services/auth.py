@@ -7,12 +7,13 @@ from uuid import UUID
 from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError
 from pydantic import EmailStr, TypeAdapter, ValidationError
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models import CandidateProfile
 from app.models.user import (
     AuthSession,
+    PasswordResetToken,
     PreAuthChallenge,
     ProfileOwnershipAdoption,
     User,
@@ -23,6 +24,7 @@ PASSWORD_MAX_LENGTH: Final = 128
 SESSION_IDLE_TIMEOUT: Final = timedelta(hours=12)
 SESSION_ABSOLUTE_LIFETIME: Final = timedelta(days=7)
 PRE_AUTH_CHALLENGE_LIFETIME: Final = timedelta(minutes=5)
+PASSWORD_RESET_TOKEN_LIFETIME: Final = timedelta(minutes=30)
 _EMAIL_ADAPTER: Final = TypeAdapter(EmailStr)
 _PASSWORD_HASHER: Final = PasswordHasher(type=Type.ID)
 _DUMMY_PASSWORD_HASH: Final = _PASSWORD_HASHER.hash(secrets.token_urlsafe(32))
@@ -194,6 +196,121 @@ def reset_password(session: Session, email: str, password: str) -> None:
             )
             .values(revoked_at=utc_now())
         )
+        session.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.consumed_at.is_(None),
+            )
+            .values(consumed_at=utc_now())
+        )
+
+
+def create_password_reset_token(
+    session: Session,
+    email: str,
+    now: datetime | None = None,
+) -> tuple[str, str] | None:
+    try:
+        normalized_email = normalize_login_email(email)
+    except ValueError:
+        return None
+
+    now = utc_now() if now is None else now
+    result: tuple[str, str] | None = None
+    with session.begin():
+        dialect_name = session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            session.execute(text("BEGIN IMMEDIATE"))
+        elif dialect_name != "postgresql":
+            raise UnsupportedAuthDatabaseError(
+                f"Password reset does not support the {dialect_name} database engine."
+            )
+
+        session.execute(
+            delete(PasswordResetToken).where(
+                (PasswordResetToken.expires_at <= now) | PasswordResetToken.consumed_at.is_not(None)
+            )
+        )
+        user_query = select(User).where(User.email == normalized_email, User.is_active.is_(True))
+        if dialect_name == "postgresql":
+            user_query = user_query.with_for_update()
+        user = session.scalar(user_query)
+        if user is not None:
+            session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+            raw_token = secrets.token_urlsafe(32)
+            session.add(
+                PasswordResetToken(
+                    user_id=user.id,
+                    token_hash=hash_token(raw_token),
+                    created_at=now,
+                    expires_at=now + PASSWORD_RESET_TOKEN_LIFETIME,
+                )
+            )
+            result = user.email, raw_token
+    return result
+
+
+def complete_password_reset(
+    session: Session,
+    raw_token: str,
+    new_password: str,
+    now: datetime | None = None,
+) -> bool:
+    validate_password(new_password)
+    now = utc_now() if now is None else now
+    token_digest = hash_token(raw_token)
+
+    with session.begin():
+        dialect_name = session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            session.execute(text("BEGIN IMMEDIATE"))
+        elif dialect_name != "postgresql":
+            raise UnsupportedAuthDatabaseError(
+                f"Password reset does not support the {dialect_name} database engine."
+            )
+
+        reset_user_id = session.scalar(
+            select(PasswordResetToken.user_id).where(PasswordResetToken.token_hash == token_digest)
+        )
+        if reset_user_id is None:
+            return False
+
+        user_query = select(User).where(User.id == reset_user_id).with_for_update()
+        user = session.scalar(user_query)
+        reset_token = session.scalar(
+            select(PasswordResetToken)
+            .where(PasswordResetToken.token_hash == token_digest)
+            .with_for_update()
+        )
+        if (
+            user is None
+            or not user.is_active
+            or reset_token is None
+            or reset_token.user_id != user.id
+            or reset_token.consumed_at is not None
+            or normalize_database_datetime(reset_token.expires_at) <= now
+        ):
+            return False
+
+        user.password_hash = hash_password(new_password)
+        session.execute(
+            update(AuthSession)
+            .where(
+                AuthSession.user_id == user.id,
+                AuthSession.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        session.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.consumed_at.is_(None),
+            )
+            .values(consumed_at=now)
+        )
+    return True
 
 
 def change_password(
@@ -229,6 +346,14 @@ def change_password(
                 AuthSession.revoked_at.is_(None),
             )
             .values(revoked_at=utc_now())
+        )
+        session.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.consumed_at.is_(None),
+            )
+            .values(consumed_at=utc_now())
         )
 
 
