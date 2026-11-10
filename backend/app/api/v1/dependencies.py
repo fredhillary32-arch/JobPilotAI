@@ -16,7 +16,7 @@ from app.services.auth import (
     normalize_database_datetime,
     utc_now,
 )
-from app.settings import Settings, get_settings
+from app.settings import Settings, get_settings, normalize_origin
 
 SESSION_COOKIE_NAME = "jobpilot_session"
 
@@ -42,14 +42,18 @@ def clear_session_cookie(
 
 
 def require_allowed_origin(request: Request, settings: Settings) -> None:
-    if request.headers.get("origin") != settings.auth_allowed_origin:
+    origin = request.headers.get("origin")
+    normalized_origin = normalize_origin(origin) if origin else None
+    normalized_allowed_origin = normalize_origin(settings.auth_allowed_origin)
+
+    if origin is not None and normalized_origin != normalized_allowed_origin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request origin is not allowed.",
         )
     if (
         request.headers.get("sec-fetch-site", "").lower() == "cross-site"
-        and request.headers.get("origin") != settings.auth_allowed_origin
+        and (origin is None or normalized_origin != normalized_allowed_origin)
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

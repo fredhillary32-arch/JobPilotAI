@@ -154,6 +154,72 @@ def test_password_reset_requires_origin_and_one_use_pre_auth_csrf(recovery_clien
     assert missing_csrf.status_code == 403
 
 
+def test_pre_auth_csrf_allows_configured_cross_site_origin(recovery_client) -> None:
+    client, _ = recovery_client
+
+    response = client.get(
+        PRE_AUTH_URL,
+        headers={"Origin": ORIGIN, "Sec-Fetch-Site": "cross-site"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["csrf_token"]
+
+    rejected = client.get(
+        PRE_AUTH_URL,
+        headers={"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"},
+    )
+    assert rejected.status_code == 403
+
+
+def test_pre_auth_csrf_normalizes_allowed_origin_with_trailing_slash(recovery_client) -> None:
+    client, _ = recovery_client
+    settings = Settings(
+        postgres_user="test-user",
+        postgres_password="test-password",
+        postgres_db="test-db",
+        auth_allowed_origin=f"{ORIGIN}/",
+        auth_local_http=True,
+        password_reset_smtp_host="smtp.example.test",
+        password_reset_smtp_username="mailer",
+        password_reset_smtp_password="smtp-test-password",
+        password_reset_sender_email="noreply@example.com",
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        response = client.get(
+            PRE_AUTH_URL,
+            headers={"Origin": ORIGIN, "Sec-Fetch-Site": "cross-site"},
+        )
+        assert response.status_code == 200
+        assert response.json()["csrf_token"]
+        cookie_header = response.headers["set-cookie"].lower()
+        assert "httponly" in cookie_header
+        assert "samesite=lax" in cookie_header or "samesite=strict" in cookie_header
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://user:pass@job-pilot-ai-ochre.vercel.app",
+        "https://job-pilot-ai-ochre.vercel.app/path",
+        "https://job-pilot-ai-ochre.vercel.app?token=abc",
+        "https://job-pilot-ai-ochre.vercel.app/#fragment",
+    ],
+)
+def test_auth_allowed_origin_rejects_credentials_paths_and_queries(value: str) -> None:
+    with pytest.raises(ValueError):
+        Settings(
+            postgres_user="test-user",
+            postgres_password="test-password",
+            postgres_db="test-db",
+            auth_allowed_origin=value,
+            auth_local_http=False,
+        )
+
+
 def test_reset_api_rejects_missing_email_proof_and_identity_substitution(
     recovery_client,
     monkeypatch: pytest.MonkeyPatch,

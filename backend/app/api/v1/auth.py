@@ -52,7 +52,7 @@ from app.services.auth import (
 from app.services.login_limiter import login_failure_limiter
 from app.services.password_reset_email import send_password_reset_email
 from app.services.password_reset_limiter import password_reset_limiter
-from app.settings import Settings, get_settings
+from app.settings import Settings, get_settings, normalize_origin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 PRE_AUTH_COOKIE_NAME = "jobpilot_pre_auth"
@@ -326,12 +326,17 @@ def create_pre_auth_csrf(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PreAuthChallengeResponse:
     origin = request.headers.get("origin")
-    if origin is not None and origin != settings.auth_allowed_origin:
+    normalized_origin = normalize_origin(origin) if origin else None
+    normalized_allowed_origin = normalize_origin(settings.auth_allowed_origin)
+    if origin is not None and normalized_origin != normalized_allowed_origin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request origin is not allowed.",
         )
-    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+    if (
+        request.headers.get("sec-fetch-site", "").lower() == "cross-site"
+        and (origin is None or normalized_origin != normalized_allowed_origin)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request origin is not allowed.",

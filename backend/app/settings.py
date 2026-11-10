@@ -1,11 +1,26 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import EmailStr, Field, SecretStr, model_validator
+from pydantic import EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def normalize_origin(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("Origin must not be empty.")
+    parsed = urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("AUTH_ALLOWED_ORIGIN must be a valid http(s) origin.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("AUTH_ALLOWED_ORIGIN must not include credentials.")
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("AUTH_ALLOWED_ORIGIN must not include a path, query string, or fragment.")
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}".rstrip("/")
 
 
 class Settings(BaseSettings):
@@ -27,6 +42,13 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:5173",
         validation_alias="AUTH_ALLOWED_ORIGIN",
     )
+
+    @field_validator("auth_allowed_origin", mode="before")
+    @classmethod
+    def normalize_auth_allowed_origin(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        return normalize_origin(value)
     auth_local_http: bool = Field(default=False, validation_alias="AUTH_LOCAL_HTTP")
     auth_cookie_samesite: str = Field(default="strict", validation_alias="AUTH_COOKIE_SAMESITE")
     password_reset_smtp_host: str | None = Field(default=None, validation_alias="PASSWORD_RESET_SMTP_HOST")
