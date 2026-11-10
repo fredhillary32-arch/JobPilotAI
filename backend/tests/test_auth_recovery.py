@@ -1,4 +1,6 @@
+import logging
 import secrets
+import smtplib
 from collections.abc import Generator
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -6,12 +8,14 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.v1 import auth as auth_api
 from app.main import app
 from app.models.user import AuthSession, PasswordResetToken, User
-from app.services.auth import hash_password, hash_token, utc_now, verify_password
+from app.services import password_reset_email
+from app.services.auth import UnsupportedAuthDatabaseError, hash_password, hash_token, utc_now, verify_password
 from app.services.password_reset_limiter import password_reset_limiter
 from app.settings import Settings, get_settings
 
@@ -152,6 +156,64 @@ def test_password_reset_requires_origin_and_one_use_pre_auth_csrf(recovery_clien
         json={"email": "owner@example.com"},
     )
     assert missing_csrf.status_code == 403
+
+
+def test_reset_request_logs_pre_auth_database_failure_without_exception_details(
+    recovery_client,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client, _ = recovery_client
+
+    def fail_challenge(*_args, **_kwargs):
+        raise OperationalError(
+            "sensitive sql statement",
+            {"email": "owner@example.com"},
+            RuntimeError("private database detail"),
+        )
+
+    monkeypatch.setattr(auth_api, "consume_pre_auth_challenge", fail_challenge)
+    caplog.set_level(logging.ERROR, logger=auth_api.__name__)
+    response = client.post(
+        REQUEST_RESET_URL,
+        headers={"Origin": ORIGIN, "X-CSRF-Token": "csrf-token"},
+        json={"email": "owner@example.com"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Authentication service unavailable."}
+    assert "Pre-auth challenge persistence failed (OperationalError)." in caplog.text
+    assert "owner@example.com" not in caplog.text
+    assert "private database detail" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        OperationalError("sensitive sql statement", {"email": "owner@example.com"}, RuntimeError("private db detail")),
+        UnsupportedAuthDatabaseError("private database configuration detail"),
+    ],
+)
+def test_reset_request_logs_token_storage_failure_without_sensitive_details(
+    recovery_client,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failure: Exception,
+) -> None:
+    client, _ = recovery_client
+
+    def fail_token_creation(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(auth_api, "create_password_reset_token", fail_token_creation)
+    caplog.set_level(logging.ERROR, logger=auth_api.__name__)
+    response = _request_reset(client, "owner@example.com")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Authentication service unavailable."}
+    assert f"Password-reset token persistence failed ({type(failure).__name__})." in caplog.text
+    assert "owner@example.com" not in caplog.text
+    assert "private" not in caplog.text
 
 
 def test_pre_auth_csrf_allows_configured_cross_site_origin(recovery_client) -> None:
@@ -333,17 +395,55 @@ def test_password_reset_rejects_bad_passwords_without_changing_user(
 def test_password_reset_request_is_unavailable_without_email_configuration(
     unauthenticated_client: TestClient,
     database: tuple[object, sessionmaker[Session]],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _, factory = database
     password_reset_limiter.reset()
     with factory.begin() as session:
         session.add(User(email="owner@example.com", password_hash=hash_password("correct horse battery staple")))
 
+    caplog.set_level(logging.ERROR, logger=auth_api.__name__)
     response = _request_reset(unauthenticated_client, "owner@example.com")
 
     assert response.status_code == 503
+    assert response.json() == {"detail": "Password recovery is not configured."}
+    assert "Password-reset request unavailable: SMTP configuration is incomplete." in caplog.text
+    assert "owner@example.com" not in caplog.text
     with factory() as session:
         assert session.scalar(select(PasswordResetToken)) is None
+
+
+def test_smtp_authentication_failure_does_not_change_reset_request_response_or_log_secrets(
+    recovery_client,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client, factory = recovery_client
+    with factory.begin() as session:
+        session.add(User(email="owner@example.com", password_hash=hash_password("correct horse battery staple")))
+
+    class FailingSmtp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def starttls(self, **_kwargs) -> None:
+            return None
+
+        def login(self, _username: str, _password: str) -> None:
+            raise smtplib.SMTPAuthenticationError(535, b"private smtp credential detail")
+
+    monkeypatch.setattr(password_reset_email.smtplib, "SMTP", lambda *_args, **_kwargs: FailingSmtp())
+    caplog.set_level(logging.ERROR, logger=password_reset_email.__name__)
+
+    response = _request_reset(client, "owner@example.com")
+
+    assert response.status_code == 202
+    assert "Password-reset email delivery failed (SMTPAuthenticationError)." in caplog.text
+    assert "owner@example.com" not in caplog.text
+    assert "private smtp credential detail" not in caplog.text
 
 
 def test_expired_password_reset_link_cannot_change_password(

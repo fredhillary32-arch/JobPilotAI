@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 from typing import Annotated, TypeVar
 from urllib.parse import quote
@@ -62,6 +63,7 @@ MAX_PASSWORD_CHANGE_BODY_BYTES = 8192
 MAX_PASSWORD_RESET_BODY_BYTES = 8192
 GENERIC_LOGIN_ERROR = "Invalid email or password."
 AuthRequestT = TypeVar("AuthRequestT", bound=BaseModel)
+logger = logging.getLogger(__name__)
 
 
 def _set_cookie(
@@ -222,7 +224,8 @@ def _consume_pre_auth_challenge(
             request.headers.get(CSRF_HEADER_NAME),
             request.cookies.get(PRE_AUTH_COOKIE_NAME),
         )
-    except SQLAlchemyError:
+    except SQLAlchemyError as error:
+        logger.error("Pre-auth challenge persistence failed (%s).", type(error).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable.",
@@ -420,6 +423,7 @@ async def request_password_reset(
     _record_password_reset_attempt(_client_ip(request))
 
     if not settings.password_reset_email_configured:
+        logger.error("Password-reset request unavailable: SMTP configuration is incomplete.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Password recovery is not configured.",
@@ -427,7 +431,8 @@ async def request_password_reset(
 
     try:
         reset = await run_in_threadpool(create_password_reset_token, session, payload.email)
-    except (UnsupportedAuthDatabaseError, SQLAlchemyError):
+    except (UnsupportedAuthDatabaseError, SQLAlchemyError) as error:
+        logger.error("Password-reset token persistence failed (%s).", type(error).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable.",
